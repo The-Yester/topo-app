@@ -6,17 +6,23 @@ import {
     FlatList,
     TouchableOpacity,
     StyleSheet,
-    Image
+    Image,
+    Platform,
+    StatusBar,
+    ActivityIndicator,
+    SafeAreaView
 } from 'react-native';
 import { searchMovies, getGenres } from '../api/MovieService';
 import { debounce } from 'lodash';
 import { useNavigation } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/FontAwesome';
 
 const SearchScreen = () => {
-    const navigation = useNavigation(); // Get navigation instance
+    const navigation = useNavigation();
     const [query, setQuery] = useState('');
     const [genres, setGenres] = useState([]);
     const [movies, setMovies] = useState([]); // Store search results
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         const fetchGenres = async () => {
@@ -30,171 +36,274 @@ const SearchScreen = () => {
         fetchGenres();
     }, []);
 
-    // Search movies when typing in search bar
+    // Helper to fetch movies
     const fetchMovies = async (searchQuery) => {
-        if (!searchQuery.trim()) return; // Prevent empty searches
+        if (!searchQuery.trim()) {
+            setMovies([]);
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
         try {
             const results = await searchMovies(searchQuery);
-            setMovies(results);
+            setMovies(results); // Update state with filtered list
         } catch (error) {
             console.error("Error searching movies:", error);
+        } finally {
+            setLoading(false);
         }
     };
 
-    // Debounce search input to avoid excessive API calls
-    const handleInputChange = useCallback(debounce((text) => {
-        fetchMovies(text);
-    }, 250), []);
+    // Debounce the API call
+    // Note: We keep the debounced function stable with useCallback
+    const debouncedSearch = useCallback(
+        debounce((text) => fetchMovies(text), 400),
+        []
+    );
 
-    // Handle genre selection and navigate to GenreMoviesScreen
+    const handleTextChange = (text) => {
+        setQuery(text);
+        if (text.length > 0) {
+            setLoading(true); // Show loader immediately while waiting for debounce
+        }
+        debouncedSearch(text);
+    };
+
     const handleGenrePress = (genre) => {
         navigation.navigate('GenreMoviesScreen', { genreId: genre.id, genreName: genre.name });
     };
 
+    const renderMovieItem = ({ item }) => (
+        <TouchableOpacity
+            style={styles.movieItem}
+            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+        >
+            <Image
+                source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
+                style={styles.moviePoster}
+            />
+            <View style={styles.movieInfo}>
+                <Text style={styles.movieTitle}>{item.title}</Text>
+                <Text style={styles.movieYear}>{item.release_date ? item.release_date.split('-')[0] : 'N/A'}</Text>
+            </View>
+            <Icon name="chevron-right" size={14} color="#666" />
+        </TouchableOpacity>
+    );
+
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.searchTitle}>Search</Text>
+                <Text style={styles.headerTitle}>Search</Text>
             </View>
 
-            <View style={styles.searchBar}>
-                <Image source={require('../assets/search_icon.jpg')} style={styles.searchIcon} />
-                <TextInput
-                    style={styles.textInput}
-                    placeholder="Search Here! Or by Genre for the Latest Movie"
-                    onChangeText={(text) => {
-                        setQuery(text);   // Update state immediately
-                        handleInputChange(text);  // Fetch movies after debounce
-                    }}
-                    value={query}
+            <View style={styles.searchBarContainer}>
+                <View style={styles.searchBar}>
+                    <Icon name="search" size={18} color="#888" style={styles.searchIcon} />
+                    <TextInput
+                        style={styles.textInput}
+                        placeholder="Search movies, genres..."
+                        placeholderTextColor="#666"
+                        onChangeText={handleTextChange}
+                        value={query}
+                        autoCapitalize="none"
+                    />
+                    {query.length > 0 && (
+                        <TouchableOpacity onPress={() => handleTextChange('')}>
+                            <Icon name="times-circle" size={18} color="#888" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+
+            {loading ? (
+                <View style={styles.centerContent}>
+                    <ActivityIndicator size="large" color="#e50914" />
+                </View>
+            ) : query.length > 0 ? (
+                <FlatList
+                    data={movies}
+                    renderItem={renderMovieItem}
+                    keyExtractor={(item) => item.id.toString()}
+                    contentContainerStyle={styles.listContent}
+                    ListEmptyComponent={
+                        <View style={styles.centerContent}>
+                            <Text style={styles.emptyText}>No movies found.</Text>
+                        </View>
+                    }
                 />
-            </View>
+            ) : (
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Browse Genres</Text>
+                    <FlatList
+                        data={genres}
+                        renderItem={({ item, index }) => (
+                            <TouchableOpacity
+                                style={[
+                                    styles.genreItem,
+                                    { backgroundColor: genreColors[index % genreColors.length] }
+                                ]}
+                                onPress={() => handleGenrePress(item)}
+                            >
+                                <Text style={styles.genreText}>{item.name}</Text>
+                            </TouchableOpacity>
+                        )}
+                        keyExtractor={(item) => item.id.toString()}
+                        numColumns={2}
+                        columnWrapperStyle={styles.columnWrapper}
+                        contentContainerStyle={styles.listContent}
+                    />
 
-            <Text style={styles.browseTitle}>Browse Categories</Text>
-            <FlatList
-                data={genres}
-                renderItem={({ item, index }) => (
-                    <TouchableOpacity 
-                        style={[
-                            styles.genreItem, 
-                            { backgroundColor: genreColors[index % genreColors.length] }
-                        ]}
-                        onPress={() => handleGenrePress(item)} // Navigate to GenreMovieScreen
-                    >
-                        <Text style={styles.genreText}>{item.name}</Text>
-                    </TouchableOpacity>
-                )}
-                keyExtractor={(item) => item.id.toString()}
-                numColumns={2}
-                columnWrapperStyle={styles.columnWrapper}
-            />
-
-            {/* Movie Results List */}
-            <FlatList
-                data={movies}
-                renderItem={({ item }) => (
-                    <TouchableOpacity 
-                        style={styles.movieItem} 
-                        onPress={() => navigation.navigate('MovieDetailScreen', { movieId: item.id })}
-                    >
-                        <Image
-                            source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
-                            style={styles.moviePoster}
-                        />
-                        <Text style={styles.movieTitle}>{item.title}</Text>
-                    </TouchableOpacity>
-                )}
-                keyExtractor={(item) => item.id.toString()}
-            />
-        </View>
+                    {/* Attribution Footer */}
+                    <View style={styles.attributionContainer}>
+                        <Text style={styles.attributionText}>This product uses the TMDB API but is not endorsed or certified by TMDB.</Text>
+                    </View>
+                </View>
+            )}
+        </SafeAreaView>
     );
 };
 
-// Preset colors for genres to mimic Apple Music style
+// Vibrant dark theme colors for genres
 const genreColors = [
-    '#FF9F1C', '#2EC4B6', '#E71D36', '#011627',
-    '#8D99AE', '#D62828', '#F77F00', '#3D348B'
+    '#E50914', '#B81D24', '#221F1F', '#F5F5F1', // Using some brand colors + others
+    '#8a2be2', '#4169e1', '#20b2aa', '#ff8c00',
+    '#ff1493', '#00ced1', '#ffd700', '#dc143c'
 ];
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 16,
-        backgroundColor: '#D3D3D3',
+        backgroundColor: '#0a0a1a', // Dark Theme Background
+        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
     },
     header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 10,
+        paddingHorizontal: 20,
+        paddingBottom: 15,
+        paddingTop: 10,
     },
-    searchTitle: {
-        fontSize: 32,
+    headerTitle: {
+        fontSize: 28,
         fontWeight: 'bold',
+        color: '#fff',
         fontFamily: 'Trebuchet MS',
     },
-    profileIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    searchBarContainer: {
+        paddingHorizontal: 20,
+        marginBottom: 20,
+    },
+    attributionContainer: {
+        padding: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: 0.5
+    },
+    attributionText: {
+        color: '#fff',
+        fontSize: 12,
+        fontStyle: 'italic',
+        fontFamily: 'Trebuchet MS',
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'white',
-        borderRadius: 20,
-        paddingHorizontal: 10,
-        marginBottom: 20,
-        height: 40,
+        backgroundColor: '#1a1a2e',
+        borderRadius: 12,
+        paddingHorizontal: 15,
+        height: 50,
+        borderWidth: 1,
+        borderColor: '#333'
     },
     searchIcon: {
-        width: 20,
-        height: 20,
         marginRight: 10,
     },
     textInput: {
         flex: 1,
         fontSize: 16,
+        color: '#fff',
         fontFamily: 'Trebuchet MS',
     },
-    browseTitle: {
-        fontSize: 24,
+    sectionTitle: {
+        fontSize: 18,
         fontWeight: 'bold',
-        marginBottom: 10,
-        fontFamily: 'Trebuchet MS',
+        color: '#888',
+        marginLeft: 20,
+        marginBottom: 15,
+        textTransform: 'uppercase',
+        letterSpacing: 1
     },
-    genreItem: {
-        flex: 1,
-        borderRadius: 20,
-        padding: 20,
-        margin: 5,
-        alignItems: 'center',
-        justifyContent: 'center',
+    listContent: {
+        paddingHorizontal: 20,
+        paddingBottom: 20
     },
-    genreText: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: 'white',
-        fontFamily: 'Trebuchet MS',
-    },
+    // Genres
     columnWrapper: {
         justifyContent: 'space-between',
     },
+    genreItem: {
+        flex: 1,
+        height: 80,
+        borderRadius: 12,
+        marginBottom: 15,
+        marginHorizontal: 5,
+        alignItems: 'center',
+        justifyContent: 'center',
+        // Add subtle shadow/overlay
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    genreText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: 'white',
+        fontFamily: 'Trebuchet MS',
+        textAlign: 'center',
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3
+    },
+    // Movie Results
     movieItem: {
         flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: '#161625',
+        marginBottom: 10,
+        borderRadius: 10,
         padding: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
+        borderWidth: 1,
+        borderColor: '#222'
     },
     moviePoster: {
         width: 50,
         height: 75,
-        marginRight: 10,
+        borderRadius: 5,
+        marginRight: 15,
+    },
+    movieInfo: {
+        flex: 1
     },
     movieTitle: {
         fontSize: 16,
+        fontWeight: 'bold',
+        color: '#fff',
+        marginBottom: 4
     },
+    movieYear: {
+        fontSize: 14,
+        color: '#888'
+    },
+    // Utils
+    centerContent: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    emptyText: {
+        color: '#666',
+        fontSize: 16
+    }
 });
 
 export default SearchScreen;

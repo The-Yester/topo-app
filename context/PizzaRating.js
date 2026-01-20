@@ -1,36 +1,33 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, PanResponder } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, PanResponder, Dimensions } from 'react-native';
 import Svg, { Path, Circle, G } from 'react-native-svg';
 
 // Configuration
 const MAX_RATING = 5;
-const NUM_MAIN_SLICES = 5; // Corresponds to 5 stars
-const NUM_HALF_SLICES = MAX_RATING * 2; // 10 segments for 0.5 granularity
-const ANGLE_PER_HALF_SLICE = 360 / NUM_HALF_SLICES; // 36 degrees
+const NUM_MAIN_SLICES = 5;
+const NUM_HALF_SLICES = MAX_RATING * 2;
+const ANGLE_PER_HALF_SLICE = 360 / NUM_HALF_SLICES;
 
-// Colors (approximate from image, you can fine-tune these)
-const COLOR_BACKGROUND_CARD = '#FFE0B2'; // Light peach/pink background of the card
-const COLOR_PIE_CANVAS = '#FFF9C4';    // Pale yellow background of the pie chart circle itself
-const COLOR_SELECTED_FULL = '#F57F17';   // Darker orange for full rated segments
-const COLOR_SELECTED_HALF = '#FFA000';   // Lighter orange/yellowish for half rated segment
-const COLOR_UNSELECTED = '#E0E0E0';     // Light gray for unselected segments
-const COLOR_PIE_BORDER = '#D84315';     // Red-orange border of the pie
-const DOT_COLOR = '#C62828';           // Deep red for the dots
-const TEXT_COLOR_PRIMARY = '#212121';
-const TEXT_COLOR_SECONDARY = '#757575';
-const BUTTON_COLOR_RESET = '#FF7043';
+// Colors (Dark Theme)
+const COLOR_BACKGROUND_CARD = '#1a1a2e';
+const COLOR_PIE_CANVAS = '#252535';
+const COLOR_SELECTED_FULL = '#ffda79';
+const COLOR_SELECTED_HALF = '#ccae62';
+const COLOR_UNSELECTED = '#333';
+const COLOR_PIE_BORDER = '#d35400';
+const PEPPERONI_COLOR = '#c0392b';
+const TEXT_COLOR_PRIMARY = '#FFFFFF';
+const TEXT_COLOR_SECONDARY = '#ccc';
+const BUTTON_COLOR_RESET = '#e74c3c';
 const BUTTON_TEXT_COLOR = '#FFFFFF';
+const BUTTON_COLOR_SUBMIT = '#ff8c00'; // TOPO Orange
 
 // Dimensions
-const PIE_OUTER_RADIUS = 90;
-const PIE_BORDER_WIDTH = 8; // Width of the red-orange border
-const PIE_SLICE_RADIUS = PIE_OUTER_RADIUS - PIE_BORDER_WIDTH / 2; // Radius for drawing slices
-const DOT_RADIUS = 6;
-const DOT_DISTANCE_FROM_CENTER = PIE_SLICE_RADIUS * 0.55;
+const screenWidth = Dimensions.get('window').width;
 
-// Helper function to describe an SVG arc path for a pie slice
+// Helper to describe an SVG arc path for a pie slice
 const describeArc = (x, y, radius, startAngleDeg, endAngleDeg) => {
-    const startAngleRad = ((startAngleDeg - 90) * Math.PI) / 180; // Offset by -90 to start from top
+    const startAngleRad = ((startAngleDeg - 90) * Math.PI) / 180;
     const endAngleRad = ((endAngleDeg - 90) * Math.PI) / 180;
     const largeArcFlag = endAngleDeg - startAngleDeg <= 180 ? '0' : '1';
 
@@ -39,7 +36,7 @@ const describeArc = (x, y, radius, startAngleDeg, endAngleDeg) => {
     const endX = x + radius * Math.cos(endAngleRad);
     const endY = y + radius * Math.sin(endAngleRad);
 
-    if (Math.abs(startAngleDeg - endAngleDeg) === 0) return ""; // Avoid zero-angle paths
+    if (Math.abs(startAngleDeg - endAngleDeg) === 0) return "";
 
     return [
         'M', x, y,
@@ -49,118 +46,183 @@ const describeArc = (x, y, radius, startAngleDeg, endAngleDeg) => {
     ].join(' ');
 };
 
-const PizzaRating = ({ initialRating = 0, onRatingChange }) => {
-    const [rating, setRating] = useState(initialRating);
+const PizzaRating = ({ initialRating = 0, onSubmitRating, readonly = false, size }) => {
+    const [rating, setRating] = useState(parseFloat(initialRating));
+
+    useEffect(() => {
+        setRating(parseFloat(initialRating));
+    }, [initialRating]);
+
+    // Calculate dimensions based on `size` prop or default responsive size
+    const PIE_OUTER_RADIUS = size ? size / 2 : screenWidth * 0.35;
+    const PIE_BORDER_WIDTH = size ? size * 0.08 : 10;
+    const PIE_SLICE_RADIUS = PIE_OUTER_RADIUS - PIE_BORDER_WIDTH / 2;
+    const PEPPERONI_RADIUS = PIE_OUTER_RADIUS * 0.06;
     const pieCenter = { x: PIE_OUTER_RADIUS, y: PIE_OUTER_RADIUS };
+
     const panResponderRef = useRef(
         PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onPanResponderGrant: (evt, gestureState) => handleTouch(gestureState),
-            onPanResponderMove: (evt, gestureState) => handleTouch(gestureState),
+            onStartShouldSetPanResponder: () => !readonly,
+            onPanResponderGrant: (evt, gestureState) => !readonly && handleTouch(gestureState),
+            onPanResponderMove: (evt, gestureState) => !readonly && handleTouch(gestureState),
         })
     ).current;
 
     const handleTouch = (gestureState) => {
-        const { locationX, locationY } = gestureState;
-        if (locationX === undefined || locationY === undefined) { // For web/other scenarios if values are not direct
-             // Fallback or adjust if nativeEvent is needed for precise location within the SVG
-            const touchXInSvg = gestureState.x0 - (/* offset of SVG from screen edge if needed */ 0);
-            const touchYInSvg = gestureState.y0 - (/* offset of SVG from screen edge if needed */ 0);
-            // This part might require onLayout of the Svg container to get its absolute position
-            // For simplicity, assuming locationX/Y are relative to the PanResponder's view (the Svg parent)
-            // This needs careful setup with onLayout to get the true center of the pie on screen.
-            // For this example, we'll use rougher coordinates based on pieCenter.
-            // A robust way is to get the Svg container's layout.
-        }
+        // Placeholder for pan logic if we ever implement layout-based pan
+    };
 
+    const handleLayout = (event) => {
+        // layout capture
+    };
 
+    const handleTouchWithEvent = (event) => {
+        if (readonly) return;
+
+        const { locationX, locationY } = event.nativeEvent;
+        // x, y relative to the view
         const dx = locationX - pieCenter.x;
         const dy = locationY - pieCenter.y;
         let angleRad = Math.atan2(dy, dx);
         let angleDeg = (angleRad * 180) / Math.PI;
 
-        angleDeg = (angleDeg + 360 + 90) % 360; // Normalize: 0 at top, increases clockwise
+        angleDeg = (angleDeg + 90);
+        if (angleDeg < 0) angleDeg += 360;
 
         let newRating = (angleDeg / 360) * MAX_RATING;
-        newRating = Math.round(newRating * 2) / 2; // Round to nearest 0.5
-        newRating = Math.max(0.5, Math.min(newRating, MAX_RATING)); // Clamp to 0.5-5 range
+        newRating = Math.ceil(newRating * 2) / 2;
+        newRating = Math.max(0.5, Math.min(newRating, MAX_RATING));
 
         setRating(newRating);
-        if (onRatingChange) onRatingChange(newRating);
     };
-
 
     const resetRating = () => {
         setRating(0);
-        if (onRatingChange) onRatingChange(0);
+    };
+
+    const handleSubmit = () => {
+        if (onSubmitRating) onSubmitRating(rating);
     };
 
     const getRatingDescription = (r) => {
         if (r === 0) return "Select a rating";
-        if (r >= 4.8) return "Absolutely perfect! Best pizza ever!";
-        if (r >= 4.0) return "Excellent!";
-        if (r >= 3.0) return "Pretty good!";
-        if (r >= 2.0) return "Not bad.";
-        return "Could be better.";
+        if (r >= 4.8) return "Chef's Kiss! 🍕";
+        if (r >= 4.0) return "Delicious!";
+        if (r >= 3.0) return "Tasty";
+        if (r >= 2.0) return "Edible";
+        return "Burnt Crust";
     };
 
     const ratingWholePart = Math.floor(rating);
-    const ratingDecimalPart = rating - ratingWholePart;
-
     const slicePaths = [];
+    const toppings = [];
+
     for (let i = 0; i < NUM_HALF_SLICES; i++) {
         const startAngle = i * ANGLE_PER_HALF_SLICE;
         const endAngle = (i + 1) * ANGLE_PER_HALF_SLICE;
-        const currentSegmentValue = (i + 1) * 0.5; // Value this segment *completes*
+        const midAngle = startAngle + (ANGLE_PER_HALF_SLICE / 2);
+        const currentSegmentValue = (i + 1) * 0.5;
 
         let fillColor = COLOR_UNSELECTED;
-        if (currentSegmentValue <= ratingWholePart) {
+        let hasCheese = false;
+
+        if (rating >= currentSegmentValue) {
             fillColor = COLOR_SELECTED_FULL;
-        } else if (currentSegmentValue > ratingWholePart && currentSegmentValue <= ratingWholePart + 0.5 && ratingDecimalPart >= 0.5) {
-            fillColor = COLOR_SELECTED_HALF;
+            hasCheese = true;
         }
 
         slicePaths.push(
             <Path
-                key={`halfSlice-${i}`}
+                key={`slice-${i}`}
                 d={describeArc(pieCenter.x, pieCenter.y, PIE_SLICE_RADIUS, startAngle, endAngle)}
                 fill={fillColor}
+                stroke={readonly ? 'transparent' : COLOR_BACKGROUND_CARD} // Cleaner look for mini version
+                strokeWidth={readonly ? 0.5 : 2}
+                onPress={handleTouchWithEvent}
             />
         );
+
+        if (hasCheese) {
+            const rad = ((midAngle - 90) * Math.PI) / 180;
+            const dist = PIE_SLICE_RADIUS * 0.6;
+            const pepX = pieCenter.x + dist * Math.cos(rad);
+            const pepY = pieCenter.y + dist * Math.sin(rad);
+
+            toppings.push(
+                <Circle
+                    key={`pep-${i}`}
+                    cx={pepX}
+                    cy={pepY}
+                    r={PEPPERONI_RADIUS}
+                    fill={PEPPERONI_COLOR}
+                    opacity={0.9}
+                    onPress={handleTouchWithEvent}
+                />
+            );
+
+            if (i % 2 === 0) {
+                const dist2 = PIE_SLICE_RADIUS * 0.35;
+                const pepX2 = pieCenter.x + dist2 * Math.cos(rad);
+                const pepY2 = pieCenter.y + dist2 * Math.sin(rad);
+                toppings.push(
+                    <Circle
+                        key={`pep2-${i}`}
+                        cx={pepX2}
+                        cy={pepY2}
+                        r={PEPPERONI_RADIUS * 0.7}
+                        fill={PEPPERONI_COLOR}
+                        opacity={0.9}
+                        onPress={handleTouchWithEvent}
+                    />
+                );
+            }
+        }
     }
 
-    const dots = [];
-    if (rating >= 1) { // Dot for the first star area
-        const angle1Deg = ANGLE_PER_HALF_SLICE * 0.5; // Center of the first full slice
-        const angle1Rad = ((angle1Deg - 90) * Math.PI) / 180;
-        dots.push(<Circle key="dot1" cx={pieCenter.x + DOT_DISTANCE_FROM_CENTER * Math.cos(angle1Rad)} cy={pieCenter.y + DOT_DISTANCE_FROM_CENTER * Math.sin(angle1Rad)} r={DOT_RADIUS} fill={DOT_COLOR} />);
-    }
-    if (rating >= 2) { // Dot for the second star area
-        const angle2Deg = ANGLE_PER_HALF_SLICE * 2.5; // Center of the second full slice
-        const angle2Rad = ((angle2Deg - 90) * Math.PI) / 180;
-        dots.push(<Circle key="dot2" cx={pieCenter.x + DOT_DISTANCE_FROM_CENTER * Math.cos(angle2Rad)} cy={pieCenter.y + DOT_DISTANCE_FROM_CENTER * Math.sin(angle2Rad)} r={DOT_RADIUS} fill={DOT_COLOR} />);
+    // Mini / Readonly container styles
+    if (readonly) {
+        return (
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                <Svg height={PIE_OUTER_RADIUS * 2} width={PIE_OUTER_RADIUS * 2}>
+                    <Circle cx={pieCenter.x} cy={pieCenter.y} r={PIE_OUTER_RADIUS} fill={COLOR_PIE_BORDER} />
+                    <Circle cx={pieCenter.x} cy={pieCenter.y} r={PIE_SLICE_RADIUS} fill={COLOR_PIE_CANVAS} />
+                    <G>{slicePaths}</G>
+                    <G>{toppings}</G>
+                </Svg>
+            </View>
+        );
     }
 
     return (
         <View style={styles.card}>
-            <Text style={styles.title}>Pizza Pie Rating System</Text>
+            <Text style={styles.title}>Pizza Rating</Text>
 
-            <View style={styles.pieInteractionContainer} {...panResponderRef.panHandlers}>
-                <Svg height={PIE_OUTER_RADIUS * 2} width={PIE_OUTER_RADIUS * 2} viewBox={`0 0 ${PIE_OUTER_RADIUS * 2} ${PIE_OUTER_RADIUS * 2}`}>
-                    <Circle cx={pieCenter.x} cy={pieCenter.y} r={PIE_OUTER_RADIUS} fill={COLOR_PIE_CANVAS} />
+            <View
+                style={styles.pieContainer}
+                onStartShouldSetResponder={() => true}
+                onResponderMove={handleTouchWithEvent}
+                onResponderGrant={handleTouchWithEvent}
+            >
+                <Svg height={PIE_OUTER_RADIUS * 2} width={PIE_OUTER_RADIUS * 2}>
+                    <Circle cx={pieCenter.x} cy={pieCenter.y} r={PIE_OUTER_RADIUS} fill={COLOR_PIE_BORDER} />
+                    <Circle cx={pieCenter.x} cy={pieCenter.y} r={PIE_SLICE_RADIUS} fill={COLOR_PIE_CANVAS} />
                     <G>{slicePaths}</G>
-                    <Circle cx={pieCenter.x} cy={pieCenter.y} r={PIE_SLICE_RADIUS} fill="transparent" stroke={COLOR_PIE_BORDER} strokeWidth={PIE_BORDER_WIDTH} />
-                    <G>{dots}</G>
+                    <G>{toppings}</G>
                 </Svg>
             </View>
 
             <Text style={styles.ratingValueText}>{rating.toFixed(1)} / {MAX_RATING}</Text>
             <Text style={styles.ratingDescriptionText}>{getRatingDescription(rating)}</Text>
 
-            <TouchableOpacity style={styles.resetButton} onPress={resetRating}>
-                <Text style={styles.resetButtonText}>Reset Rating</Text>
-            </TouchableOpacity>
-            <Text style={styles.hintText}>Touch or drag on slices to select your rating</Text>
+            <View style={styles.buttonsContainer}>
+                <TouchableOpacity style={styles.resetButton} onPress={resetRating}>
+                    <Text style={styles.resetButtonText}>Reset</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+                    <Text style={styles.submitButtonText}>Submit Rating</Text>
+                </TouchableOpacity>
+            </View>
+            <Text style={styles.hintText}>Slide finger customized pizza slices!</Text>
         </View>
     );
 };
@@ -171,14 +233,9 @@ const styles = StyleSheet.create({
         borderRadius: 15,
         padding: 20,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 3,
-        width: '90%',
+        width: screenWidth * 0.92,
         alignSelf: 'center',
-        marginTop: 20,
+        marginTop: 10,
     },
     title: {
         fontSize: 22,
@@ -186,32 +243,50 @@ const styles = StyleSheet.create({
         color: TEXT_COLOR_PRIMARY,
         marginBottom: 15,
     },
-    pieInteractionContainer: {
-        width: PIE_OUTER_RADIUS * 2,
-        height: PIE_OUTER_RADIUS * 2,
-        marginBottom: 10,
-        // backgroundColor: 'rgba(0,0,0,0.1)', // For debugging touch area
+    pieContainer: {
+        marginBottom: 20,
     },
     ratingValueText: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: COLOR_SELECTED_FULL, // Using a prominent color
+        color: COLOR_SELECTED_FULL,
         marginBottom: 5,
     },
     ratingDescriptionText: {
         fontSize: 16,
         color: TEXT_COLOR_SECONDARY,
-        marginBottom: 15,
+        marginBottom: 20,
         textAlign: 'center',
+    },
+    buttonsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+        marginBottom: 10,
     },
     resetButton: {
         backgroundColor: BUTTON_COLOR_RESET,
-        paddingVertical: 10,
-        paddingHorizontal: 30,
-        borderRadius: 20,
-        marginBottom: 10,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 25,
+        flex: 1,
+        marginRight: 10,
+        alignItems: 'center',
     },
     resetButtonText: {
+        color: BUTTON_TEXT_COLOR,
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    submitButton: {
+        backgroundColor: BUTTON_COLOR_SUBMIT,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 25,
+        flex: 2,
+        alignItems: 'center',
+    },
+    submitButtonText: {
         color: BUTTON_TEXT_COLOR,
         fontSize: 16,
         fontWeight: 'bold',

@@ -1,19 +1,19 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
-import { MoviesContext } from '../context/MoviesContext';
+import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { MoviesContext, OVERALL_RATINGS_LIST_ID, OVERALL_RATINGS_LIST_NAME } from '../context/MoviesContext';
 import { v4 as uuidv4 } from 'uuid';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 
-const LOCKED_LISTS = ["Favorites", "Watch Later", "Overall Ratings"];
+// Locked lists that exist in user's movieLists
+const USER_LOCKED_LISTS = ["Favorites", "Watch Later"];
 
 const ListScreen = ({ navigation }) => {
-    const { movieLists, addList, deleteList, addMovieToList } = useContext(MoviesContext);
+    const { movieLists, addList, deleteList, addMovieToList, overallRatedMovies } = useContext(MoviesContext);
     const [newListName, setNewListName] = useState('');
-    const overallRatingsListRef = useRef(null);
 
     useEffect(() => {
-        // Ensure locked lists exist
-        LOCKED_LISTS.forEach(listName => {
+        // Ensure user locked lists exist (Favorites, Watch Later)
+        USER_LOCKED_LISTS.forEach(listName => {
             const exists = movieLists.some(list => list.name === listName);
             if (!exists) {
                 const newList = {
@@ -22,24 +22,14 @@ const ListScreen = ({ navigation }) => {
                     movies: [],
                 };
                 addList(newList);
-                if (listName === "Overall Ratings") {
-                    overallRatingsListRef.current = newList;
-                }
-            } else if (listName === "Overall Ratings") {
-                overallRatingsListRef.current = movieLists.find(list => list.name === listName);
             }
         });
     }, [movieLists, addList]);
 
-    const handleMovieRated = (movie) => {
-        if (overallRatingsListRef.current) {
-            addMovieToList(overallRatingsListRef.current.id, movie);
-        }
-    };
-
     const handleAddList = () => {
         const trimmedName = newListName.trim();
-        if (trimmedName && !LOCKED_LISTS.includes(trimmedName)) {
+        // Check both user locked lists and the special Overall Ratings name
+        if (trimmedName && !USER_LOCKED_LISTS.includes(trimmedName) && trimmedName !== OVERALL_RATINGS_LIST_NAME) {
             const newList = {
                 id: uuidv4(),
                 name: trimmedName,
@@ -58,7 +48,8 @@ const ListScreen = ({ navigation }) => {
     };
 
     const rightSwipeActions = (item) => {
-        if (!LOCKED_LISTS.includes(item.name)) {
+        // Prevent deletion of Favorites, Watch Later, and Overall Ratings
+        if (!USER_LOCKED_LISTS.includes(item.name) && item.name !== OVERALL_RATINGS_LIST_NAME) {
             return (
                 <TouchableOpacity style={styles.deleteButton} onPress={() => deleteList(item.id)}>
                     <Text style={styles.deleteButtonText}>Delete</Text>
@@ -68,12 +59,22 @@ const ListScreen = ({ navigation }) => {
         return null;
     };
 
-    const allLists = movieLists.filter(
-        (list, index, self) => index === self.findIndex(l => l.name === list.name)
-    );
+    // Construct the full list to display
+    const allLists = [
+        // 1. Special "Overall Ratings" list (Always first or specifically placed)
+        {
+            id: OVERALL_RATINGS_LIST_ID,
+            name: OVERALL_RATINGS_LIST_NAME,
+            movies: overallRatedMovies || []
+        },
+        // 2. User's lists (Favorites, Watch Later, Custom Lists)
+        ...movieLists.filter(
+            (list, index, self) => index === self.findIndex(l => l.name === list.name) && list.name !== OVERALL_RATINGS_LIST_NAME // Filter out any accidental "Overall Ratings" dups in user lists
+        )
+    ];
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             <Text style={styles.title}>Your Movie Lists</Text>
             <FlatList
                 data={allLists}
@@ -85,48 +86,65 @@ const ListScreen = ({ navigation }) => {
                             onPress={() => navigateToListDetails(item)}
                         >
                             <Text style={styles.listName}>{item.name}</Text>
-                            <Text>{item.movies ? item.movies.length : 0} movies</Text>
+                            <Text style={styles.listCount}>{item.movies ? item.movies.length : 0} movies</Text>
                         </TouchableOpacity>
                     </Swipeable>
                 )}
                 ListEmptyComponent={<Text style={styles.empty}>No lists yet. Add one!</Text>}
             />
-            <TextInput
-                style={styles.input}
-                placeholder="Add Your List Here"
-                value={newListName}
-                onChangeText={setNewListName}
-            />
-            <Button title="Add List" onPress={handleAddList} />
-        </View>
+            <View style={styles.inputContainer}>
+                <TextInput
+                    style={styles.input}
+                    placeholder="New List Name..."
+                    placeholderTextColor="#666"
+                    value={newListName}
+                    onChangeText={setNewListName}
+                />
+                <Button title="Add List" onPress={handleAddList} color="#ff8c00" />
+            </View>
+        </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 16, backgroundColor: '#D3D3D3' },
-    title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
+    container: {
+        flex: 1,
+        padding: 16,
+        backgroundColor: '#0a0a1a',
+        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16 // Add extra 16 for standard padding
+    },
+    title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#fff' },
     listItem: {
-        padding: 10,
-        borderBottomWidth: 2,
-        borderBottomColor: 'grey',
+        padding: 15,
+        backgroundColor: '#1a1a2e',
         marginBottom: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#333'
     },
-    listName: { fontSize: 18, fontWeight: 'bold' },
+    listName: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+    listCount: { color: '#888', marginTop: 4 },
+    inputContainer: { marginTop: 20 },
     input: {
-        borderWidth: 2,
-        borderColor: 'grey',
-        padding: 10,
+        borderWidth: 1,
+        borderColor: '#333',
+        padding: 12,
         marginBottom: 10,
-        borderRadius: 5,
-        backgroundColor: 'white'
+        borderRadius: 8,
+        backgroundColor: '#1a1a2e',
+        color: '#fff'
     },
-    empty: { textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
+    empty: { textAlign: 'center', marginTop: 20, fontStyle: 'italic', color: '#666' },
     deleteButton: {
-        backgroundColor: 'red',
+        backgroundColor: '#d32f2f',
         justifyContent: 'center',
         alignItems: 'center',
         width: 80,
-        height: '100%',
+        height: '84%', // Adjusted to match vertical spacing logic roughly or use borderRadius
+        marginTop: 0,
+        marginBottom: 10,
+        borderRadius: 8,
+        marginLeft: 10
     },
     deleteButtonText: {
         color: 'white',

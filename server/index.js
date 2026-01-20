@@ -77,11 +77,11 @@ app.get('/api/genres', async (req, res) => {
 // Get Movies by Genre (Discover)
 app.get('/api/discover', async (req, res) => {
     try {
-        const { with_genres } = req.query;
+        // Pass through all query params (allows with_watch_providers, watch_region, etc.)
         const data = await fetchFromTMDB('/discover/movie', {
-            with_genres,
-            sort_by: 'popularity.desc',
-            page: 1
+            ...req.query,
+            sort_by: req.query.sort_by || 'popularity.desc',
+            page: req.query.page || 1
         });
         res.json(data);
     } catch (error) {

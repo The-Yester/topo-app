@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { TMDB_API_KEY } from '../utils/config';
 
-const TMDB_API_KEY = '46de4e8d3c4e28a2a768923324c89503'; // Replace with your API key
+
 
 const NewStreamingScreen = ({ navigation }) => {
     const [newStreamingMovies, setNewStreamingMovies] = useState([]);

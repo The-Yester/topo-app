@@ -1,20 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  LayoutAnimation,
-  Platform,
-  UIManager,
+  Dimensions,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import Slider from '@react-native-community/slider';
 
-// Enable LayoutAnimation for Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// Colors (Dark Theme)
+const COLOR_BG = '#1a1a2e';
+const COLOR_CARD_BG = '#252535';
+const COLOR_TEXT_PRIMARY = '#FFFFFF';
+const COLOR_TEXT_SECONDARY = '#ccc';
+const COLOR_ACCENT = '#ff8c00'; // TOPO Orange
+const COLOR_SLIDER_MAX = '#4A4A4A';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AWARD_CATEGORIES = [
   'Directing',
@@ -34,163 +36,238 @@ const AWARD_CATEGORIES = [
   'Visual Effects'
 ];
 
-// Helper to generate picker items from 1.0 to 10.0 with 0.1 increments, plus a clear option
-const generatePickerItems = () => {
-  const items = [{ label: "Clear Rating", value: "" }]; // Use empty string for clear
-  for (let i = 10; i <= 100; i += 1) { // 1.0 to 10.0 in 0.1 increments
-    const value = (i / 10).toFixed(1);
-    items.push({ label: value, value: value });
-  }
-  return items;
-};
+// Memoized Row Component to ensure smooth slider performance
+const CategoryRow = memo(({ category, value, onValueChange }) => {
+  return (
+    <View style={styles.row}>
+      <View style={styles.labelContainer}>
+        <Text style={styles.categoryLabel}>{category}</Text>
+        <Text style={[styles.valueText, value === 0 && styles.valueTextDisabled]}>
+          {value > 0 ? value.toFixed(1) : "N/A"}
+        </Text>
+      </View>
 
-const RATING_PICKER_ITEMS = generatePickerItems();
+      <View style={styles.sliderContainer}>
+        <Slider
+          style={{ width: '100%', height: 40 }}
+          minimumValue={0}
+          maximumValue={10}
+          step={0.1} // Smooth 0.1 increments
+          value={value}
+          onValueChange={onValueChange}
+          minimumTrackTintColor={value > 0 ? COLOR_ACCENT : '#555'}
+          maximumTrackTintColor={COLOR_SLIDER_MAX}
+          thumbTintColor={value > 0 ? COLOR_ACCENT : '#777'}
+        />
+        <View style={styles.ticksConfig}>
+          <Text style={styles.tickLabel}>0</Text>
+          <Text style={styles.tickLabel}>5</Text>
+          <Text style={styles.tickLabel}>10</Text>
+        </View>
+      </View>
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom equality check: only re-render if value changed
+  return prevProps.value === nextProps.value;
+});
 
-const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = [] }) => {
+const DEFAULT_EXCLUDED = [];
+
+const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFAULT_EXCLUDED }) => {
   const [ratings, setRatings] = useState(() => {
     const defaultRatings = {};
     AWARD_CATEGORIES.forEach(category => {
-      if (!excludedCategories.includes(category)) {
-        const initialValue = initialRatings[category];
-        defaultRatings[category] = initialValue !== undefined && initialValue !== null ? String(initialValue) : '';
-      }
+      const initialValue = initialRatings[category];
+      defaultRatings[category] = initialValue !== undefined && initialValue !== null ? parseFloat(initialValue) : 0;
     });
     return defaultRatings;
   });
 
-  const [expandedCategory, setExpandedCategory] = useState(null); // Tracks which category picker is open
+  // Track last reported to prevent loops
+  const lastReportedJson = React.useRef("");
 
+  // Calculate Average on change
   useEffect(() => {
-    const validValues = Object.values(ratings)
-      .map(v => parseFloat(v))
-      .filter(v => !isNaN(v) && v >= 1.0 && v <= 10.0);
+    // Basic structural check to avoid churn
+    const currentJson = JSON.stringify(ratings);
+    if (currentJson === lastReportedJson.current) return;
+
+    const validValues = Object.entries(ratings)
+      .filter(([key, val]) => !excludedCategories.includes(key) && val > 0)
+      .map(([_, val]) => val);
 
     if (validValues.length > 0) {
       const sum = validValues.reduce((acc, val) => acc + val, 0);
       const average = sum / validValues.length;
+
+      // Update ref before calling out
+      lastReportedJson.current = currentJson;
       onChange?.(parseFloat(average.toFixed(1)), ratings);
     } else {
-      onChange?.(null, ratings);
+      if (lastReportedJson.current !== currentJson) {
+        lastReportedJson.current = currentJson;
+        onChange?.(null, ratings);
+      }
+      if (lastReportedJson.current !== currentJson) {
+        lastReportedJson.current = currentJson;
+        onChange?.(null, ratings);
+      }
     }
-  }, [ratings, onChange]);
+  }, [ratings, excludedCategories]); // Removed onChange to prevent loops
 
-  const handleCategoryPress = (category) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Smooth animation
-    setExpandedCategory(prevExpanded => (prevExpanded === category ? null : category));
-  };
+  // 2. Data Sync: If initialRatings changes (e.g. loaded from DB), update local state
+  // This is tricky to do without loops. We only do it if local state is "default" (mostly 0s)
+  // OR we assume parent knows best when providing new initialRatings.
+  // A safe way is to use a Ref to track if we've "touched" the controls.
+  const hasUserInteracted = React.useRef(false);
 
-  const handlePickerValueChange = (category, itemValue) => {
+  useEffect(() => {
+    if (!hasUserInteracted.current && initialRatings && Object.keys(initialRatings).length > 0) {
+      setRatings(prev => {
+        // Merge
+        const next = { ...prev };
+        let changed = false;
+        AWARD_CATEGORIES.forEach(cat => {
+          if (initialRatings[cat] !== undefined && initialRatings[cat] !== next[cat]) {
+            next[cat] = parseFloat(initialRatings[cat]);
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [initialRatings]);
+
+  // Stable callback for updating state
+  const handleSliderChange = useCallback((category, value) => {
+    hasUserInteracted.current = true; // Mark as user-controlled
     setRatings(prev => ({
       ...prev,
-      [category]: itemValue, // itemValue will be "" if "Clear Rating" is selected
+      [category]: parseFloat(value.toFixed(1))
     }));
-    // Collapse after selection:
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); // Animate the collapse
-    setExpandedCategory(null); // Set to null to close the picker
+  }, []);
+
+  const getOverallScore = () => {
+    const validValues = Object.entries(ratings)
+      .filter(([key, val]) => !excludedCategories.includes(key) && val > 0)
+      .map(([_, val]) => val);
+
+    if (validValues.length === 0) return "N/A";
+    const sum = validValues.reduce((acc, val) => acc + val, 0);
+    return (sum / validValues.length).toFixed(1);
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Academy Awards Rating (1.0–10.0)</Text>
-      <ScrollView>
+      <View style={styles.header}>
+        <Text style={styles.title}>Awards Rating</Text>
+        <Text style={styles.subtitle}>Rate categories 0-10 (0 = N/A)</Text>
+        <View style={styles.averageContainer}>
+          <Text style={styles.averageLabel}>Overall Score</Text>
+          <Text style={styles.averageValue}>{getOverallScore()}</Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} removeClippedSubviews={true}>
         {AWARD_CATEGORIES.filter(cat => !excludedCategories.includes(cat)).map((category) => (
-          <View key={category} style={styles.categoryWrapper}> 
-            <TouchableOpacity
-              style={styles.categoryItem}
-              onPress={() => handleCategoryPress(category)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.categoryLabel}>{category}</Text>
-              <View style={styles.ratingDisplay}>
-                <Text style={styles.categoryValue}>
-                  {ratings[category] && ratings[category] !== ''
-                    ? `${parseFloat(ratings[category]).toFixed(1)}`
-                    : 'Not Rated'}
-                </Text>
-                <Text style={styles.ratingMax}> / 10.00</Text>
-              </View>
-            </TouchableOpacity>
-            {expandedCategory === category && (
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={ratings[category] || ""} // Default to empty string if no rating
-                  style={styles.picker}
-                  onValueChange={(itemValue) => handlePickerValueChange(category, itemValue)}
-                  itemStyle={styles.pickerItem}
-                >
-                  {RATING_PICKER_ITEMS.map(item => (
-                    <Picker.Item key={item.value} label={item.label} value={item.value} />
-                  ))}
-                </Picker>
-              </View>
-            )}
-          </View>
+          <CategoryRow
+            key={category}
+            category={category}
+            value={ratings[category] || 0}
+            onValueChange={(val) => handleSliderChange(category, val)}
+          />
         ))}
       </ScrollView>
     </View>
   );
 };
 
-export default AwardsRating;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 5, 
-    paddingTop: 16,
-    paddingBottom: 16, 
-    backgroundColor: '#fff'
+    backgroundColor: COLOR_BG,
+  },
+  header: {
+    padding: 20,
+    backgroundColor: COLOR_BG,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+    alignItems: 'center',
   },
   title: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLOR_TEXT_PRIMARY,
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: COLOR_TEXT_SECONDARY,
     marginBottom: 15,
-    textAlign: 'center',
-    color: '#333',
   },
-  categoryWrapper: { 
-    marginBottom: 8, 
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    overflow: 'hidden', 
+  averageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLOR_CARD_BG,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
   },
-  categoryItem: {
+  averageLabel: {
+    fontSize: 16,
+    color: COLOR_TEXT_SECONDARY,
+    marginRight: 10,
+  },
+  averageValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLOR_ACCENT,
+  },
+  scrollContent: {
+    padding: 15,
+    paddingBottom: 40,
+  },
+  row: {
+    backgroundColor: COLOR_CARD_BG,
+    marginBottom: 10,
+    borderRadius: 12,
+    padding: 15,
+  },
+  labelContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 18, 
-    paddingHorizontal: 15,
+    marginBottom: 5,
   },
   categoryLabel: {
     fontSize: 16,
-    fontWeight: '500', 
-    color: '#333', 
-    flexShrink: 1, 
-    marginRight: 10,
+    fontWeight: '600',
+    color: COLOR_TEXT_PRIMARY,
   },
-  ratingDisplay: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+  valueText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLOR_ACCENT,
   },
-  categoryValue: {
-    fontSize: 16,
-    fontWeight: '600', 
-    color: '#007AFF', 
-  },
-  ratingMax: {
-    fontSize: 13,
-    fontWeight: '400',
+  valueTextDisabled: {
     color: '#666',
   },
-  pickerContainer: {
-    paddingVertical: 1, 
-  },
-  picker: {
+  sliderContainer: {
     width: '100%',
-    height: 50, 
+    justifyContent: 'center',
   },
-  pickerItem: {
-    // fontSize: 17, // iOS specific styling
-    // color: '#000', // iOS specific styling
+  ticksConfig: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    marginTop: -5,
   },
+  tickLabel: {
+    fontSize: 10,
+    color: '#666',
+  }
+
 });
+
+export default AwardsRating;

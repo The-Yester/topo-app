@@ -16,35 +16,63 @@ const thumbRadius = strokeWidth * 0.6;
 const svgSize = (circleRadius + strokeWidth) * 2;
 const center = svgSize / 2;
 
-// Colors
-const COLOR_BACKGROUND_CARD = '#FFFFFF';
-const COLOR_TITLE_TEXT = '#333333';
-const COLOR_SUBTITLE_TEXT = '#777777';
-const COLOR_CIRCLE_TRACK = '#E0E0E0'; // Light gray for the track
-const COLOR_CIRCLE_PROGRESS_START = '#FFF176'; // Light Yellow
-const COLOR_CIRCLE_PROGRESS_END = '#FFD54F';   // Darker Yellow
-const COLOR_THUMB = '#66BB6A'; // Green for the thumb
-const COLOR_PERCENTAGE_TEXT = '#212121';
-const COLOR_DESCRIPTION_TEXT = '#555555';
-const COLOR_SUBMIT_BUTTON_BG_START = '#FFEE58'; // Yellow gradient for button
-const COLOR_SUBMIT_BUTTON_BG_END = '#FFD600';
-const COLOR_SUBMIT_BUTTON_TEXT = '#424242'; // Dark gray text for button
+// Colors (Dark Theme Match)
+const COLOR_BACKGROUND_CARD = '#1a1a2e';
+const COLOR_TITLE_TEXT = '#FFFFFF';
+const COLOR_SUBTITLE_TEXT = '#ccc';
+const COLOR_CIRCLE_TRACK = '#333';
+const COLOR_CIRCLE_PROGRESS_START = '#ff8c00'; // TOPO Orange
+const COLOR_CIRCLE_PROGRESS_END = '#ffda79';   // Lighter Orange/Yellow
+const COLOR_THUMB = '#FFFFFF';
+const COLOR_PERCENTAGE_TEXT = '#ff8c00';
+const COLOR_DESCRIPTION_TEXT = '#cccccc';
+const COLOR_SUBMIT_BUTTON_BG = '#ff8c00';
+const COLOR_SUBMIT_BUTTON_TEXT = '#FFFFFF';
 
-// Emojis and Descriptions based on percentage
+const RATING_DESCRIPTIONS = [
+    { value: 0, label: "Do Not Watch", short: "DNW" },
+    { value: 1, label: "Awful", short: "Awful" },
+    { value: 2, label: "Bad", short: "Bad" },
+    { value: 3, label: "Poor", short: "Poor" },
+    { value: 4, label: "Watchable", short: "Watchable" },
+    { value: 5, label: "Fair", short: "Fair" },
+    { value: 6, label: "Good", short: "Good" },
+    { value: 7, label: "More Than Good", short: "MTG" },
+    { value: 8, label: "Very Good", short: "Very Good" },
+    { value: 9, label: "Excellent", short: "Excellent" },
+    { value: 10, label: "Perfect", short: "Perfect" },
+];
+
 const getFeedback = (percentage) => {
-    if (percentage < 20) return { emoji: '😞', text: "Needs Improvement" };
-    if (percentage < 40) return { emoji: '😟', text: "Below Average" };
-    if (percentage < 60) return { emoji: '😐', text: "It's Okay" };
-    if (percentage < 80) return { emoji: '🙂', text: "Good!" };
-    if (percentage <= 99) return { emoji: '😄', text: "Great!" };
-    return { emoji: '🤩', text: "Excellent!" };
+    // Logic: 0-10 -> 0, 11-20 -> 1, ..., 91-99 -> 9, 100 -> 10
+    let scaledValue = 0;
+    if (percentage === 100) {
+        scaledValue = 10;
+    } else {
+        // (percentage - 1) / 10 ensures that 10 falls into 0 (9/10), and 11 falls into 1 (10/10)
+        scaledValue = Math.floor((percentage - 1) / 10);
+        if (scaledValue < 0) scaledValue = 0; // Handle 0
+    }
+
+    const desc = RATING_DESCRIPTIONS.find(d => d.value === scaledValue);
+
+    // Add some emojis based on the score
+    let emoji = '😐';
+    if (scaledValue >= 9) emoji = '🤩'; // Excellent/Perfect
+    else if (scaledValue >= 7) emoji = '😄'; // MTG/Very Good
+    else if (scaledValue >= 5) emoji = '🙂'; // Fair/Good
+    else if (scaledValue >= 3) emoji = '😟'; // Poor/Watchable
+    else emoji = '💀'; // DNW - Bad
+
+    return {
+        emoji: emoji,
+        text: desc ? desc.label : "Unknown"
+    };
 };
 
-// Helper to convert angle to percentage and vice-versa
 const angleToPercentage = (angle) => {
-    // Normalize angle (0 at top, clockwise)
     let normalizedAngle = (angle + 360) % 360;
-    if (normalizedAngle === 0 && currentAngleRef.current > 270) { // Handle crossing 360 to 0 for 100%
+    if (normalizedAngle === 0 && currentAngleRef.current > 270) {
         normalizedAngle = 360;
     }
     let percentage = (normalizedAngle / 360) * MAX_RATING;
@@ -55,7 +83,6 @@ const percentageToAngle = (percentage) => {
     return (percentage / MAX_RATING) * 360;
 };
 
-// Helper to describe an SVG arc path
 const describeArc = (x, y, radius, startAngleDeg, endAngleDeg) => {
     const startAngleRad = ((startAngleDeg - 90) * Math.PI) / 180;
     const endAngleRad = ((endAngleDeg - 90) * Math.PI) / 180;
@@ -66,7 +93,7 @@ const describeArc = (x, y, radius, startAngleDeg, endAngleDeg) => {
     const endX = x + radius * Math.cos(endAngleRad);
     const endY = y + radius * Math.sin(endAngleRad);
 
-    if (Math.abs(startAngleDeg - endAngleDeg) >= 359.99) { // Full circle
+    if (Math.abs(startAngleDeg - endAngleDeg) >= 359.99) {
         return `M ${x} ${y - radius} A ${radius} ${radius} 0 1 1 ${x - 0.01} ${y - radius} Z`;
     }
 
@@ -76,22 +103,30 @@ const describeArc = (x, y, radius, startAngleDeg, endAngleDeg) => {
     ].join(' ');
 };
 
-// To keep track of the current angle for smooth 0/360 transition
 let currentAngleRef = { current: 0 };
 
+const PercentageRating = ({ value = 50, onChange = () => { } }) => {
+    // Note: The parent component passes `onChange` which is effectively `onSubmit` in current usage for some reason?
+    // Wait, in MovieDetailScreen: 
+    // onChange={(newPercentage) => handleRatingSubmit(newPercentage)}
+    // This submits immediately on release or change? 
+    // Usually a slider updates state, then button submits.
+    // Parent expects `onChange` to be the "submit" trigger currently for Percentage?
+    // Let's check MovieDetailScreen usage:
+    // onChange={(newPercentage) => handleRatingSubmit(newPercentage)}
+    // This implies immediate submission on change which is annoyed for a slider.
+    // I should change this to internal state and explicit submit.
 
-const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => {
-    const [rating, setRating] = useState(Math.max(MIN_RATING, Math.min(MAX_RATING, initialRating)));
+    const [rating, setRating] = useState(Math.max(MIN_RATING, Math.min(MAX_RATING, value)));
     const animatedRating = useRef(new Animated.Value(rating)).current;
 
     useEffect(() => {
         Animated.timing(animatedRating, {
             toValue: rating,
             duration: 200,
-            useNativeDriver: false, // SVG attributes are not supported by native driver
+            useNativeDriver: false,
         }).start();
     }, [rating]);
-
 
     const panResponder = useRef(
         PanResponder.create({
@@ -112,22 +147,20 @@ const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => 
         let angleRad = Math.atan2(dy, dx);
         let angleDeg = (angleRad * 180) / Math.PI;
 
-        // Normalize angle: 0 at top (from -90 in atan2), increases clockwise
         angleDeg = (angleDeg + 90 + 360) % 360;
-        currentAngleRef.current = angleDeg; // Store current angle for 0/360 transition logic
+        currentAngleRef.current = angleDeg;
 
         const newRating = angleToPercentage(angleDeg);
         setRating(newRating);
     };
 
     const handleSubmit = () => {
-        onSubmitRating(rating);
+        onChange(rating); // Calling the prop 'onChange' which triggers submit in parent
     };
 
     const currentAngle = percentageToAngle(rating);
     const feedback = getFeedback(rating);
 
-    // Calculate thumb position
     const thumbAngleRad = ((currentAngle - 90) * Math.PI) / 180;
     const thumbX = center + circleRadius * Math.cos(thumbAngleRad);
     const thumbY = center + circleRadius * Math.sin(thumbAngleRad);
@@ -135,7 +168,7 @@ const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => 
     return (
         <View style={styles.card}>
             <Text style={styles.title}>Percentage Rating</Text>
-            <Text style={styles.subtitle}>Drag around the circle to rate from 1% to 100%</Text>
+            <Text style={styles.subtitle}>Drag to rate from 1% to 100%</Text>
 
             <View style={styles.circleContainer} {...panResponder.panHandlers}>
                 <Svg width={svgSize} height={svgSize} viewBox={`0 0 ${svgSize} ${svgSize}`}>
@@ -158,7 +191,7 @@ const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => 
 
                     {/* Progress Arc */}
                     {rating > 0 && (
-                         <Path
+                        <Path
                             d={describeArc(center, center, circleRadius, 0, currentAngle)}
                             stroke="url(#progressGradient)"
                             strokeWidth={strokeWidth}
@@ -167,19 +200,17 @@ const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => 
                         />
                     )}
 
-
                     {/* Thumb */}
-                     {rating > 0 && (
+                    {rating > 0 && (
                         <Circle
                             cx={thumbX}
                             cy={thumbY}
                             r={thumbRadius}
                             fill={COLOR_THUMB}
-                            stroke={COLOR_BACKGROUND_CARD} // Small border for thumb
+                            stroke={COLOR_BACKGROUND_CARD}
                             strokeWidth={2}
                         />
                     )}
-
 
                     {/* Central Text Content */}
                     <G x={center} y={center}>
@@ -188,12 +219,12 @@ const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => 
                             fontWeight="bold"
                             fill={COLOR_PERCENTAGE_TEXT}
                             textAnchor="middle"
-                            dy={-(componentWidth * 0.03)} // Adjust vertical position
+                            dy={-(componentWidth * 0.03)}
                         >
                             {`${rating}%`}
                         </SvgText>
                         <SvgText
-                            fontSize={componentWidth * 0.1} // Emoji size
+                            fontSize={componentWidth * 0.1}
                             textAnchor="middle"
                             dy={componentWidth * 0.08}
                         >
@@ -212,20 +243,8 @@ const PercentageRating = ({ initialRating = 50, onSubmitRating = () => {} }) => 
             </View>
 
             <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                 <LinearGradient
-                    colors={[COLOR_SUBMIT_BUTTON_BG_START, COLOR_SUBMIT_BUTTON_BG_END]}
-                    style={styles.submitButtonGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                >
-                    <Text style={styles.submitButtonText}>Submit Rating</Text>
-                </LinearGradient>
+                <Text style={styles.submitButtonText}>Submit Rating</Text>
             </TouchableOpacity>
-             <Text style={styles.footerText}>
-                This is how your circular rating would appear in a React Native
-                app. The component uses PanResponder for touch interactions
-                and SVG for visuals.
-            </Text>
         </View>
     );
 };
@@ -265,33 +284,19 @@ const styles = StyleSheet.create({
         marginBottom: 30,
     },
     submitButton: {
-        borderRadius: 25,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
-        width: '80%',
-        marginBottom: 20,
-    },
-    submitButtonGradient: {
+        backgroundColor: COLOR_SUBMIT_BUTTON_BG,
         paddingVertical: 15,
-        paddingHorizontal: 30,
+        paddingHorizontal: 40,
         borderRadius: 25,
+        width: '80%',
         alignItems: 'center',
-        justifyContent: 'center',
+        marginBottom: 10,
     },
     submitButtonText: {
         color: COLOR_SUBMIT_BUTTON_TEXT,
         fontSize: componentWidth * 0.045,
         fontWeight: 'bold',
     },
-    footerText: {
-        fontSize: componentWidth * 0.035,
-        color: COLOR_SUBTITLE_TEXT,
-        textAlign: 'center',
-        paddingHorizontal: componentWidth * 0.05,
-    }
 });
 
 export default PercentageRating;

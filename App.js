@@ -6,7 +6,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import Login from './src/login';
 import SignUpScreen from './screens/SignUpScreen';
 import HomeScreen from './screens/HomeScreen';
-import AddMovieScreen from './screens/AddMovieScreen';
+import StreamingServicesScreen from './screens/StreamingServicesScreen';
 import MovieDetailScreen from './screens/MovieDetailScreen';
 import { MoviesProvider } from './context/MoviesContext';
 import ListScreen from './screens/ListScreen';
@@ -19,6 +19,13 @@ import 'react-native-get-random-values';
 import GenreMovieScreen from './screens/GenreMovieScreen';
 import NowPlayingScreen from './screens/NowPlayingScreen';
 import NewStreamingScreen from './screens/NewStreamingScreen';
+import FollowListScreen from './screens/FollowListScreen';
+import MatchedMovieScreen from './screens/MatchedMovieScreen';
+import ConnectionDetailScreen from './screens/ConnectionDetailScreen';
+import RevealScreen from './screens/RevealScreen';
+import PublicProfileScreen from './screens/PublicProfileScreen';
+import AwardsHubScreen from './screens/AwardsHubScreen';
+import AdminAwardsScreen from './screens/AdminAwardsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -30,6 +37,8 @@ function HomeStackNavigator() {
         <HomeStack.Navigator screenOptions={{ headerShown: false }}>
             <HomeStack.Screen name="HomeScreen" component={HomeScreen} />
             <HomeStack.Screen name="MovieDetails" component={MovieDetailScreen} />
+            <HomeStack.Screen name="ProfileSettings" component={ProfileSettings} />
+            <HomeStack.Screen name="FollowList" component={FollowListScreen} />
         </HomeStack.Navigator>
     );
 }
@@ -37,31 +46,39 @@ function HomeStackNavigator() {
 // Bottom tab navigator
 function BottomTabs() {
     return (
-        <Tab.Navigator screenOptions={{ headerShown: false }}>
-            <Tab.Screen 
-                name="Home" 
-                component={HomeStackNavigator} 
-                options={{ tabBarIcon: ({ color, size }) => <Icon name="home" color={color} size={size} /> }} 
+        <Tab.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: '#e50914', tabBarInactiveTintColor: 'gray', tabBarStyle: { backgroundColor: '#0a0a1a', borderTopColor: '#222' } }}>
+            <Tab.Screen
+                name="Home"
+                component={HomeStackNavigator}
+                options={{ tabBarIcon: ({ color, size }) => <Icon name="home" color={color} size={size} /> }}
             />
-            <Tab.Screen 
-                name="New" 
-                component={AddMovieScreen} 
-                options={{ tabBarIcon: ({ color, size }) => <Icon name="plus" color={color} size={size} /> }} 
+            <Tab.Screen
+                name="Streaming"
+                component={StreamingServicesScreen}
+                options={{ tabBarIcon: ({ color, size }) => <Icon name="tv" color={color} size={size} /> }}
             />
-            <Tab.Screen 
-                name="List" 
-                component={ListScreen} 
-                options={{ tabBarIcon: ({ color, size }) => <Icon name="list" color={color} size={size} /> }} 
+            <Tab.Screen
+                name="Film Friendzy"
+                component={MatchedMovieScreen}
+                options={{
+                    tabBarLabel: 'Friendzy',
+                    tabBarIcon: ({ color, size }) => <Icon name="users" color={color} size={size} />
+                }}
             />
-            <Tab.Screen 
-                name="Message Board" 
-                component={MessageBoard} 
-                options={{ tabBarIcon: ({ color, size }) => <Icon name="comments" color={color} size={size} /> }} 
+            <Tab.Screen
+                name="List"
+                component={ListScreen}
+                options={{ tabBarIcon: ({ color, size }) => <Icon name="list" color={color} size={size} /> }}
             />
-            <Tab.Screen 
-                name="Search" 
-                component={SearchScreen} 
-                options={{ tabBarIcon: ({ color, size }) => <Icon name="search" color={color} size={size} /> }} 
+            <Tab.Screen
+                name="Message Board"
+                component={MessageBoard}
+                options={{ tabBarIcon: ({ color, size }) => <Icon name="comments" color={color} size={size} /> }}
+            />
+            <Tab.Screen
+                name="Search"
+                component={SearchScreen}
+                options={{ tabBarIcon: ({ color, size }) => <Icon name="search" color={color} size={size} /> }}
             />
         </Tab.Navigator>
     );
@@ -75,7 +92,10 @@ function AppNavigator() {
                     <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
                     <Stack.Screen name="SignUp" component={SignUpScreen} />
                     <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
-                    <Stack.Screen name="MovieDetailScreen" component={MovieDetailScreen} />
+
+                    <Stack.Screen name="AwardsHub" component={AwardsHubScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="AdminAwards" component={AdminAwardsScreen} options={{ headerShown: false, presentation: 'modal' }} />
+
                     <Stack.Screen name="ListDetails" component={ListDetailScreen} />
                     <Stack.Screen name="Profile" component={ProfileScreen} />
                     <Stack.Screen name="ProfileSettings" component={ProfileSettings} />
@@ -84,7 +104,12 @@ function AppNavigator() {
                     <Stack.Screen name="GenreMoviesScreen" component={GenreMovieScreen} />
                     <Stack.Screen name="NowPlaying" component={NowPlayingScreen} />
                     <Stack.Screen name="NewStreaming" component={NewStreamingScreen} />
-                    <Stack.Screen name="MovieDetails" component={MovieDetailScreen} />
+                    <Stack.Screen name="MovieDetails" component={MovieDetailScreen} options={{ headerShown: false }} />
+
+                    {/* Matched Movie Stack Screens */}
+                    <Stack.Screen name="ConnectionDetail" component={ConnectionDetailScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="RevealScreen" component={RevealScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="PublicProfile" component={PublicProfileScreen} options={{ headerShown: false }} />
                 </Stack.Navigator>
             </NavigationContainer>
         </MoviesProvider>

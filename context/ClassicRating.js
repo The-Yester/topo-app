@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, PanResponder, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import Slider from '@react-native-community/slider';
 
 // Configuration
 const MAX_RATING = 10;
@@ -9,18 +10,19 @@ const RATING_INCREMENT = 0.1;
 const screenWidth = Dimensions.get('window').width;
 
 // Colors
-const COLOR_BACKGROUND_CARD = '#2C2C2C'; // Dark gray for the card
-const COLOR_BACKGROUND_DISPLAY = '#1E1E1E'; // Slightly darker for rating display area
+const COLOR_BACKGROUND_CARD = '#1a1a2e'; // App Dark Theme Background
+const COLOR_BACKGROUND_DISPLAY = '#0a0a1a'; // Darker contrast
 const COLOR_TEXT_PRIMARY = '#FFFFFF';
-const COLOR_TEXT_SECONDARY = '#A0A0A0'; // Light gray for subtitles/hints
-const COLOR_TEXT_RATING_VALUE = '#FF4757'; // Bright Red for the numerical rating
-const COLOR_SLIDER_TRACK = '#4A4A4A';
-const COLOR_SLIDER_THUMB = '#FF4757'; // Bright Red
-const COLOR_BUTTON_GRID_BG = '#3A3A3A';
-const COLOR_BUTTON_GRID_BG_ACTIVE = '#FF4757'; // Red for active rating button
+const COLOR_TEXT_SECONDARY = '#ccc';
+const COLOR_TEXT_RATING_VALUE = '#ff8c00'; // App Orange Accent
+const COLOR_SLIDER_TRACK_MIN = '#ff8c00'; // App Orange Accent
+const COLOR_SLIDER_TRACK_MAX = '#4A4A4A';
+const COLOR_SLIDER_THUMB = '#ff8c00'; // App Orange Accent
+const COLOR_BUTTON_GRID_BG = '#252535'; // Slightly lighter than card
+const COLOR_BUTTON_GRID_BG_ACTIVE = '#ff8c00'; // App Orange Accent
 const COLOR_BUTTON_GRID_TEXT = '#E0E0E0';
 const COLOR_BUTTON_GRID_TEXT_ACTIVE = '#FFFFFF';
-const COLOR_SUBMIT_BUTTON_BG = '#D32F2F'; // Darker Red for submit
+const COLOR_SUBMIT_BUTTON_BG = '#ff8c00'; // App Orange Accent
 const COLOR_SUBMIT_BUTTON_TEXT = '#FFFFFF';
 
 const RATING_DESCRIPTIONS = [
@@ -37,40 +39,13 @@ const RATING_DESCRIPTIONS = [
     { value: 10, label: "Perfect", short: "Perfect" },
 ];
 
-const ClassicRating = ({ initialRating = 0, onSubmitRating = () => {} }) => {
+const ClassicRating = ({ initialRating = 0, onSubmitRating = () => { } }) => {
     const [rating, setRating] = useState(parseFloat(initialRating.toFixed(1)));
-    const [sliderLayout, setSliderLayout] = useState(null);
-    const sliderRef = useRef(null);
 
     const getRatingLabel = (currentRating) => {
         const roundedRating = Math.floor(currentRating);
         const desc = RATING_DESCRIPTIONS.find(d => d.value === roundedRating);
         return desc ? desc.short.toUpperCase() : "";
-    };
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: () => true,
-            onPanResponderGrant: (evt, gestureState) => {
-                updateRatingFromTouch(gestureState.x0);
-            },
-            onPanResponderMove: (evt, gestureState) => {
-                updateRatingFromTouch(gestureState.moveX);
-            },
-        })
-    ).current;
-
-    const updateRatingFromTouch = (touchX) => {
-        if (!sliderLayout || !sliderRef.current) return;
-
-        sliderRef.current.measure((fx, fy, width, height, px, py) => {
-            const relativeTouchX = touchX - px; // touchX relative to the slider component
-            let newRating = (relativeTouchX / width) * MAX_RATING;
-            newRating = Math.max(MIN_RATING, Math.min(MAX_RATING, newRating));
-            newRating = parseFloat(newRating.toFixed(1)); // Round to one decimal place
-            setRating(newRating);
-        });
     };
 
     const handleRatingButtonPress = (value) => {
@@ -80,8 +55,6 @@ const ClassicRating = ({ initialRating = 0, onSubmitRating = () => {} }) => {
     const handleSubmit = () => {
         onSubmitRating(rating);
     };
-
-    const thumbPosition = sliderLayout ? (rating / MAX_RATING) * sliderLayout.width - styles.sliderThumb.width / 2 : 0;
 
     return (
         <View style={styles.card}>
@@ -93,20 +66,22 @@ const ClassicRating = ({ initialRating = 0, onSubmitRating = () => {} }) => {
                 <Text style={styles.ratingLabelText}>{getRatingLabel(rating)}</Text>
             </View>
 
-            {/* Slider */}
+            {/* Native Slider */}
             <View style={styles.sliderContainer}>
-                <View
-                    ref={sliderRef}
-                    style={styles.sliderTrack}
-                    onLayout={(event) => setSliderLayout(event.nativeEvent.layout)}
-                    {...panResponder.panHandlers}
-                >
-                    {sliderLayout && (
-                        <View style={[styles.sliderThumb, { left: Math.max(0, Math.min(thumbPosition, sliderLayout.width - styles.sliderThumb.width)) }]} />
-                    )}
-                </View>
+                <Slider
+                    style={{ width: '100%', height: 40 }}
+                    minimumValue={MIN_RATING}
+                    maximumValue={MAX_RATING}
+                    step={RATING_INCREMENT}
+                    value={rating}
+                    onValueChange={(val) => setRating(parseFloat(val.toFixed(1)))}
+                    minimumTrackTintColor={COLOR_SLIDER_TRACK_MIN}
+                    maximumTrackTintColor={COLOR_SLIDER_TRACK_MAX}
+                    thumbTintColor={COLOR_SLIDER_THUMB}
+                />
+
                 <View style={styles.sliderLabelsContainer}>
-                    {[...Array(MAX_RATING + 1).keys()].map((num) => (
+                    {[0, 2, 4, 6, 8, 10].map((num) => (
                         <Text key={`label-${num}`} style={styles.sliderLabel}>{num}</Text>
                     ))}
                 </View>
@@ -140,10 +115,10 @@ const styles = StyleSheet.create({
     card: {
         backgroundColor: COLOR_BACKGROUND_CARD,
         borderRadius: 15,
-        padding: screenWidth * 0.05, // Responsive padding
+        padding: screenWidth * 0.05,
         margin: screenWidth * 0.04,
         alignItems: 'center',
-        width: screenWidth * 0.92, // Responsive width
+        width: screenWidth * 0.92,
         alignSelf: 'center',
     },
     title: {
@@ -183,25 +158,12 @@ const styles = StyleSheet.create({
         marginBottom: 25,
         alignItems: 'center',
     },
-    sliderTrack: {
-        width: '90%',
-        height: 8,
-        backgroundColor: COLOR_SLIDER_TRACK,
-        borderRadius: 4,
-        justifyContent: 'center', // For thumb vertical centering if needed
-    },
-    sliderThumb: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: COLOR_SLIDER_THUMB,
-        position: 'absolute', // Positioned by `left` style
-    },
     sliderLabelsContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        width: '90%',
-        marginTop: 8,
+        width: '100%',
+        marginTop: 5,
+        paddingHorizontal: 10,
     },
     sliderLabel: {
         fontSize: screenWidth * 0.03,
@@ -216,13 +178,13 @@ const styles = StyleSheet.create({
     },
     gridButton: {
         backgroundColor: COLOR_BUTTON_GRID_BG,
-        width: '23%', // Adjust for 4 columns, considering spacing
-        aspectRatio: 1.2, // Make buttons slightly taller than wide
+        width: '23%',
+        aspectRatio: 1.2,
         borderRadius: 8,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 5,
-        marginBottom: screenWidth * 0.02, // Spacing between rows
+        marginBottom: screenWidth * 0.02,
     },
     gridButtonActive: {
         backgroundColor: COLOR_BUTTON_GRID_BG_ACTIVE,

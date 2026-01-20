@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ImageBackground } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image, ActivityIndicator, Animated } from 'react-native';
+// import AsyncStorage from '@react-native-async-storage/async-storage'; // Unused
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import { useEffect } from 'react';
-import { ActivityIndicator } from 'react-native';
+
+
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebaseConfig'; // Ensure path is correct
 
 const LoginScreen = () => {
     const [loading, setLoading] = useState(true); // Track Loading
@@ -13,136 +16,226 @@ const LoginScreen = () => {
     const [password, setPassword] = useState('');
     const navigation = useNavigation();
 
+    // Animation State
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
     useEffect(() => {
-        const checkLoginStatus = async () => {
-          try {
-            const currentUser = await AsyncStorage.getItem('currentUserEmail');
-            if (currentUser) {
-              navigation.replace('MainTabs'); // Skip login if user already logged in
+        if (loading) {
+            Animated.loop(
+                Animated.sequence([
+                    Animated.parallel([
+                        Animated.timing(fadeAnim, {
+                            toValue: 1,
+                            duration: 1000,
+                            useNativeDriver: true,
+                        }),
+                        Animated.timing(scaleAnim, {
+                            toValue: 1.05,
+                            duration: 1000,
+                            useNativeDriver: true,
+                        }),
+                    ]),
+                    Animated.parallel([
+                        Animated.timing(fadeAnim, {
+                            toValue: 0.8,
+                            duration: 1000,
+                            useNativeDriver: true,
+                        }),
+                        Animated.timing(scaleAnim, {
+                            toValue: 0.95,
+                            duration: 1000,
+                            useNativeDriver: true,
+                        }),
+                    ]),
+                ])
+            ).start();
+        }
+    }, [loading]);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // Determine if we are navigating away or just stopping loading
+                // Ideally we fade out here but navigation breaks component unmount.
+                // Just navigate directly.
+                navigation.replace('MainTabs');
             } else {
-              setLoading(false);
+                setLoading(false);
             }
-          } catch (err) {
-            console.error('Failed to check login status:', err);
-            setLoading(false);
-          }
-        };
-        checkLoginStatus();
+        });
+        return unsubscribe; // Cleanup subscription
     }, []);
 
     if (loading) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
-                <ActivityIndicator size="large" color="#ff8c00" />
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Animated.Image
+                    source={require('../assets/TOPO_logo_Full.jpg')}
+                    style={{
+                        width: '60%',
+                        height: '30%',
+                        resizeMode: 'contain',
+                        opacity: fadeAnim,
+                        transform: [{ scale: scaleAnim }]
+                    }}
+                />
             </View>
         );
     }
 
     const handleLogin = async () => {
         try {
-            const usersData = await AsyncStorage.getItem('users');
-            const users = usersData ? JSON.parse(usersData) : [];
-            
-            if (!Array.isArray(users)) {
-                console.warn('Users data from storage is not an array:', users);
-                Alert.alert('Error', 'Invalid user data stored. Please sign up.'); // More user-friendly message
-                return;
-              }
-
-            const user = users.find((u) => u.email === email);
-
-            if (user && user.password === password) {
-                Alert.alert('Success', 'Welcome to TOPO!');
-
-                await AsyncStorage.setItem('currentUserEmail', user.email); // Use the found user object
-                
-                navigation.navigate('MainTabs');
-            } else {
-                Alert.alert('Error', 'Invalid email or password');
-            }
-
+            // Firebase Auth Login
+            await signInWithEmailAndPassword(auth, email, password);
+            // Alert.alert('Success', 'Welcome to TOPO!'); // Optional, or just navigate
+            navigation.navigate('MainTabs');
         } catch (error) {
-            Alert.alert('Error', 'An error occurred. Please try again.');
             console.error('Login error:', error);
+            let errorMessage = 'An error occurred. Please try again.';
+            if (error.code === 'auth/invalid-email') errorMessage = 'Invalid email address.';
+            if (error.code === 'auth/user-not-found') errorMessage = 'No user found with this email.';
+            if (error.code === 'auth/wrong-password') errorMessage = 'Incorrect password.';
+            if (error.code === 'auth/invalid-credential') errorMessage = 'Invalid email or password.';
+            Alert.alert('Error', errorMessage);
         }
     };
 
     return (
-        <SafeAreaView style={{ flex: 1 }}>
-            <ImageBackground 
-                source={require('../assets/TOPO_logo_Full.jpg')} // Add a glamorous background
-                style={styles.background}
-            >
-                <View style={styles.overlay}>
-                    <Icon name="film" size={50} color="#ff8c00" style={styles.icon} />
-                    <Text style={styles.title}>Rate | Stream | Collect</Text>
-                    <Text style={styles.title}>& Eat Pizza!</Text>
-                    <TextInput 
-                        style={styles.input} 
-                        placeholder="Email" 
-                        placeholderTextColor="#ddd"
-                        onChangeText={setEmail} 
-                        value={email} 
-                    />
-                    <TextInput 
-                        style={styles.input} 
-                        placeholder="Password" 
-                        placeholderTextColor="#ddd"
-                        secureTextEntry 
-                        onChangeText={setPassword} 
-                        value={password} 
-                    />
+        <SafeAreaView style={styles.container}>
+            {/* 1. Top Logo Section */}
+            <View style={styles.logoContainer}>
+                <Image
+                    source={require('../assets/TOPO_logo_Full.jpg')}
+                    style={styles.logoImage}
+                />
+            </View>
 
-                    <TouchableOpacity style={styles.button} onPress={handleLogin}>
-                        <Text style={styles.buttonText}>Login</Text>
-                    </TouchableOpacity>
+            {/* 2. Form Section */}
+            <View style={styles.formContainer}>
+                <Text style={styles.mainSlogan}>The Only Picture Opinion</Text>
+                <Text style={styles.tagline}>Rate | Share | Match</Text>
+                <Text style={styles.subTagline}>& Eat Pizza! 🍕</Text>
 
-                    <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-                        <Text style={styles.signupText}>SIGN UP</Text>
-                    </TouchableOpacity>
-                </View>
-            </ImageBackground>
-        </SafeAreaView>    
+                <TextInput
+                    style={styles.input}
+                    placeholder="Email"
+                    placeholderTextColor="#666"
+                    onChangeText={setEmail}
+                    value={email}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                />
+                <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    placeholderTextColor="#666"
+                    secureTextEntry
+                    onChangeText={setPassword}
+                    value={password}
+                />
+
+                <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+                    <Text style={styles.loginButtonText}>Login</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => navigation.navigate('SignUp')} style={styles.signupLink}>
+                    <Text style={styles.signupText}>
+                        Don't have an account? <Text style={styles.signupTextBold}>Sign Up</Text>
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
-    background: {
+    container: {
         flex: 1,
+        backgroundColor: '#21232f', // Deep dark blue/black essentially
+    },
+    logoContainer: {
+        height: '40%', // Increased size
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#00008B',
+        paddingTop: 20,
     },
-    overlay: {
-        width: '90%',
-        padding: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        borderRadius: 10,
-        alignItems: 'center',
+    logoImage: {
+        width: '100%', // Maximize width
+        height: '100%', // Maximize height
+        resizeMode: 'contain',
     },
-    icon: { marginBottom: 20 },
-    title: { fontSize: 20, fontWeight: 'bold', color: '#ff8c00', marginBottom: 20, textAlign: 'center', fontFamily: 'Trebuchet MS' },
+    formContainer: {
+        flex: 1,
+        paddingHorizontal: 25,
+        justifyContent: 'flex-start', // Start from below logo
+        paddingTop: 10,
+    },
+    mainSlogan: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#E0E0E0',
+        textAlign: 'center',
+        fontFamily: 'Trebuchet MS',
+        marginBottom: 10,
+        letterSpacing: 1,
+        fontStyle: 'italic',
+    },
+    tagline: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#ff8c00', // Orange brand color
+        textAlign: 'center',
+        fontFamily: 'Trebuchet MS',
+        marginBottom: 5,
+    },
+    subTagline: {
+        fontSize: 18,
+        color: '#ccc',
+        textAlign: 'center',
+        fontFamily: 'Trebuchet MS',
+        marginBottom: 30,
+    },
     input: {
-        width: '100%',
-        height: 40,
-        borderColor: '#888',
+        backgroundColor: '#1a1a2e',
+        color: '#fff',
+        borderRadius: 12,
+        paddingHorizontal: 15,
+        paddingVertical: 12,
+        fontSize: 16,
+        marginBottom: 16,
         borderWidth: 1,
-        borderRadius: 15,
-        paddingHorizontal: 10,
-        marginBottom: 20,
-        backgroundColor: '#222',
-        color: 'white',
+        borderColor: '#333',
     },
-    button: {
+    loginButton: {
         backgroundColor: '#ff8c00',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 20,
-        width: '100%',
+        borderRadius: 12,
+        paddingVertical: 15,
+        alignItems: 'center',
+        marginTop: 10,
+        shadowColor: '#ff8c00',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 5,
+    },
+    loginButtonText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    signupLink: {
+        marginTop: 20,
         alignItems: 'center',
     },
-    buttonText: { fontSize: 18, fontWeight: 'bold', color: 'white' },
-    signupText: { color: '#ff8c00', marginTop: 15, textDecorationLine: 'underline' },
+    signupText: {
+        color: '#888',
+        fontSize: 14,
+    },
+    signupTextBold: {
+        color: '#ff8c00',
+        fontWeight: 'bold',
+    },
 });
 
 export default LoginScreen;
