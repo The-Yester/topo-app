@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ryester.topo"
+      "bundleIdentifier": "com.ryester.topo",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,12 +26,9 @@
       },
       "package": "com.ryester.topo"
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "extra": {
       "eas": {
-        "projectId": "c5286e03-f3f4-4853-8872-db6f8fff43ea"
+        "projectId": "baa2a43e-a568-4f77-96d3-23750b05d5bf"
       }
     },
     "owner": "ryester"

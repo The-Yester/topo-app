@@ -5,6 +5,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { fetchActiveAwardsEvents, seedAwardsData, saveUserPick, fetchUserBallot } from '../api/AwardsService';
 import { auth, db } from '../firebaseConfig';
 import { collection, getDocs, collectionGroup } from 'firebase/firestore';
+import { ADMIN_UIDS } from '../utils/config';
 
 const AwardsHubScreen = () => {
     const navigation = useNavigation();
@@ -244,9 +245,11 @@ const AwardsHubScreen = () => {
             <View style={[styles.container, styles.center]}>
                 <Icon name="trophy" size={50} color="#555" />
                 <Text style={{ color: 'white', marginTop: 20 }}>No Active Awards Season Found.</Text>
-                <TouchableOpacity onPress={handleSeed} style={styles.seedButton}>
-                    <Text style={styles.seedText}>Setup 2026 Season (Admin)</Text>
-                </TouchableOpacity>
+                {ADMIN_UIDS.includes(auth.currentUser?.uid) && (
+                    <TouchableOpacity onPress={handleSeed} style={styles.seedButton}>
+                        <Text style={styles.seedText}>Setup 2026 Season (Admin)</Text>
+                    </TouchableOpacity>
+                )}
             </View>
         );
     }
@@ -442,9 +445,11 @@ const AwardsHubScreen = () => {
                     );
                 })}
 
-                <TouchableOpacity onPress={() => navigation.navigate('AdminAwards')} style={{ marginTop: 40, alignSelf: 'center', padding: 10, borderRadius: 5, backgroundColor: '#333' }}>
-                    <Text style={{ color: '#aaa', fontSize: 12 }}>Admin: Manager Nominees (Live Update)</Text>
-                </TouchableOpacity>
+                {ADMIN_UIDS.includes(auth.currentUser?.uid) && (
+                    <TouchableOpacity onPress={() => navigation.navigate('AdminAwards')} style={{ marginTop: 40, alignSelf: 'center', padding: 10, borderRadius: 5, backgroundColor: '#333' }}>
+                        <Text style={{ color: '#aaa', fontSize: 12 }}>Admin: Manager Nominees (Live Update)</Text>
+                    </TouchableOpacity>
+                )}
 
             </ScrollView>
         </SafeAreaView>

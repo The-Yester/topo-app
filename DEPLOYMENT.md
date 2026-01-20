@@ -49,7 +49,7 @@ eas submit --platform android
 
 ## 3. Important Notes
 
-- **API Keys**: Ensure your `MovieService.js` has valid API keys. The current implementation uses a hardcoded key.
+- **API Keys**: Ensure `utils/config.js` has the correct production keys.
 - **Assets**: Check `app.json` to ensure all icons and splash screens look correct on different devices.
 - **Permissions**: If you add new libraries that require sensitive permissions (Camera, Location, etc.), you may need to update `app.json` plugins block or Android manifest config in `app.json` (under `android.permissions`).
 
