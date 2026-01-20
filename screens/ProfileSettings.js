@@ -5,8 +5,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { MoviesContext } from '../context/MoviesContext';
 import { Picker } from '@react-native-picker/picker';
 import US_CITIES from '../data/US_Cities';
-import { auth, db } from '../firebaseConfig';
+import { auth, db, storage } from '../firebaseConfig';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion, updateDoc as firestoreUpdate, deleteDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, signOut, deleteUser } from 'firebase/auth';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/FontAwesome';
@@ -41,6 +42,7 @@ const ProfileSettings = ({ navigation }) => {
     const [following, setFollowing] = useState([]);
     const [followers, setFollowers] = useState([]);
     const [topFriends, setTopFriends] = useState([]);
+    const [hydratedTopFriends, setHydratedTopFriends] = useState([]); // Fresh data for display
     const [isFriendModalVisible, setIsFriendModalVisible] = useState(false);
     const [friendSearchQuery, setFriendSearchQuery] = useState('');
     const [friendSearchResults, setFriendSearchResults] = useState([]);
@@ -63,6 +65,30 @@ const ProfileSettings = ({ navigation }) => {
     useEffect(() => {
         loadUserData();
     }, []);
+
+    // Hydrate Top Friends whenever the list changes (or on load)
+    useEffect(() => {
+        const fetchFriendsData = async () => {
+            if (topFriends && topFriends.length > 0) {
+                const friendPromises = topFriends.map(async (f) => {
+                    try {
+                        const friendSnap = await getDoc(doc(db, "users", f.uid));
+                        if (friendSnap.exists()) {
+                            return { ...f, ...friendSnap.data(), uid: f.uid };
+                        }
+                        return f;
+                    } catch (e) {
+                        return f;
+                    }
+                });
+                const freshFriends = await Promise.all(friendPromises);
+                setHydratedTopFriends(freshFriends);
+            } else {
+                setHydratedTopFriends([]);
+            }
+        };
+        fetchFriendsData();
+    }, [topFriends]);
 
     React.useLayoutEffect(() => {
         navigation.setOptions({ headerShown: false });
@@ -128,8 +154,42 @@ const ProfileSettings = ({ navigation }) => {
             if (!user) return;
 
             const userDocRef = doc(db, "users", user.uid);
+            let finalPhotoUrl = profilePhoto;
+
+            // UPLOAD PHOTO IF CHANGED (Local URI)
+            if (profilePhoto && (profilePhoto.startsWith('file:') || profilePhoto.startsWith('content:'))) {
+                try {
+                    // Optimized Blob creation for Android/RN
+                    const blob = await new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.onload = function () {
+                            resolve(xhr.response);
+                        };
+                        xhr.onerror = function (e) {
+                            console.log(e);
+                            reject(new TypeError("Network request failed"));
+                        };
+                        xhr.responseType = "blob";
+                        xhr.open("GET", profilePhoto, true);
+                        xhr.send(null);
+                    });
+
+                    const storageRef = ref(storage, `profile_photos/${user.uid}_${Date.now()}.jpg`);
+                    await uploadBytes(storageRef, blob);
+
+                    // We're done with the blob, close it
+                    blob.close();
+
+                    finalPhotoUrl = await getDownloadURL(storageRef);
+                } catch (e) {
+                    console.error("Upload failed", e);
+                    Alert.alert("Upload Error", "Could not upload photo. Check your internet or storage permissions.");
+                    // Fallback to text update only if upload fails
+                }
+            }
+
             await updateDoc(userDocRef, {
-                profilePhoto,
+                profilePhoto: finalPhotoUrl,
                 name,
                 username,
                 location,
@@ -278,7 +338,7 @@ const ProfileSettings = ({ navigation }) => {
 
     const cleanPickImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.5,
@@ -459,7 +519,7 @@ const ProfileSettings = ({ navigation }) => {
                     <Text style={styles.subLabel}>Tap friends in the "Find" modal to add them here.</Text>
                     <FlatList
                         horizontal
-                        data={topFriends}
+                        data={hydratedTopFriends.length > 0 ? hydratedTopFriends : topFriends}
                         keyExtractor={item => item.uid}
                         renderItem={({ item }) => (
                             <View style={styles.topFriendItem}>

@@ -14,7 +14,7 @@ const PROVIDERS = [
     { id: 9, name: "Prime Video", logo: "https://image.tmdb.org/t/p/w200/pvske1MyAoymrs5bguRfVqYiM9a.jpg" },
     { id: 337, name: "Disney+", logo: "https://image.tmdb.org/t/p/w200/97yvRBw1GzX7fXprcF80er19ot.jpg" },
     { id: 15, name: "Hulu", logo: "https://image.tmdb.org/t/p/w200/bxBlRPEPpMVDc4jMhSrTf2339DW.jpg" },
-    { id: 384, name: "Max", logo: "https://image.tmdb.org/t/p/w200/jbe4gVSfRlbPTdESXhEKpornsfu.jpg" }, // Logo from HBO Max (1899)
+    { id: 1899, name: "Max", logo: "https://image.tmdb.org/t/p/w200/jbe4gVSfRlbPTdESXhEKpornsfu.jpg" }, // Max (US)
     { id: 350, name: "Apple TV+", logo: "https://image.tmdb.org/t/p/w200/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg" },
     { id: 283, name: "Crunchyroll", logo: "https://image.tmdb.org/t/p/w200/fzN5Jok5Ig1eJ7gyNGoMhnLSCfh.jpg" },
     { id: 386, name: "Peacock", logo: "https://image.tmdb.org/t/p/w200/2aGrp1xw3qhwCYvNGAJZPdjfeeX.jpg" }

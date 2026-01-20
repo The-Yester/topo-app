@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -31,6 +31,9 @@
         "projectId": "baa2a43e-a568-4f77-96d3-23750b05d5bf"
       }
     },
-    "owner": "ryester"
+    "owner": "ryester",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

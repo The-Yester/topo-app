@@ -4,7 +4,7 @@ import { MoviesContext } from '../context/MoviesContext';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../firebaseConfig';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { getMovieDetails } from '../api/MovieService'; // Ensure we have this
 import { TMDB_API_KEY } from '../utils/config';
 
@@ -31,6 +31,9 @@ const HomeScreen = () => {
         }
     }
 
+    // Hydrated Top Friends (Fresh Data)
+    const [hydratedTopFriends, setHydratedTopFriends] = useState([]);
+
     // Load Profile Data Real-time
     useEffect(() => {
         const user = auth.currentUser;
@@ -43,6 +46,30 @@ const HomeScreen = () => {
         });
         return () => unsub();
     }, []);
+
+    // Hydrate Top Friends (Fetch latest photos)
+    useEffect(() => {
+        const fetchFriendsData = async () => {
+            if (userProfile?.topFriends && userProfile.topFriends.length > 0) {
+                const friendPromises = userProfile.topFriends.map(async (f) => {
+                    try {
+                        const friendSnap = await getDoc(doc(db, "users", f.uid));
+                        if (friendSnap.exists()) {
+                            return { ...f, ...friendSnap.data(), uid: f.uid }; // Merge fresh data
+                        }
+                        return f; // Fallback to stale if fetch fails
+                    } catch (e) {
+                        return f;
+                    }
+                });
+                const freshFriends = await Promise.all(friendPromises);
+                setHydratedTopFriends(freshFriends);
+            } else {
+                setHydratedTopFriends([]);
+            }
+        };
+        fetchFriendsData();
+    }, [userProfile?.topFriends]);
 
     // Load Explore Data (In Theaters)
     useEffect(() => {
@@ -153,9 +180,10 @@ const HomeScreen = () => {
                 {/* --- TOP 4 FRIENDS --- */}
                 <View style={styles.sectionContainer}>
                     <Text style={styles.sectionTitle}>Top 4 Friends</Text>
-                    {(userProfile?.topFriends && userProfile.topFriends.length > 0) ? (
+                    {/* Use hydratedTopFriends if available, or fallback to userProfile (stale) momentarily */}
+                    {(hydratedTopFriends.length > 0 || (userProfile?.topFriends && userProfile.topFriends.length > 0)) ? (
                         <View style={styles.topFriendsContainer}>
-                            {userProfile.topFriends.map((friend) => (
+                            {(hydratedTopFriends.length > 0 ? hydratedTopFriends : userProfile?.topFriends || []).map((friend) => (
                                 <TouchableOpacity
                                     key={friend.uid}
                                     style={styles.topFriendItem}

@@ -15,6 +15,7 @@ const PublicProfileScreen = () => {
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isFollowing, setIsFollowing] = useState(false);
+    const [hydratedTopFriends, setHydratedTopFriends] = useState([]);
     const { addMovieToList } = useContext(MoviesContext);
 
     useEffect(() => {
@@ -27,6 +28,25 @@ const PublicProfileScreen = () => {
             if (userDoc.exists()) {
                 const data = userDoc.data();
                 setUserData(data);
+
+                // Fetch fresh Top 4 data
+                if (data.topFriends && data.topFriends.length > 0) {
+                    const friendPromises = data.topFriends.map(async (f) => {
+                        try {
+                            const friendSnap = await getDoc(doc(db, "users", f.uid));
+                            if (friendSnap.exists()) {
+                                return { ...f, ...friendSnap.data(), uid: f.uid };
+                            }
+                            return f;
+                        } catch (e) {
+                            return f;
+                        }
+                    });
+                    const freshFriends = await Promise.all(friendPromises);
+                    setHydratedTopFriends(freshFriends);
+                } else {
+                    setHydratedTopFriends([]);
+                }
 
                 // Check if current user follows this user
                 if (auth.currentUser) {
@@ -249,9 +269,9 @@ const PublicProfileScreen = () => {
                 {/* Top 4 Friends */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Top 4 Friends</Text>
-                    {userData.topFriends && userData.topFriends.length > 0 ? (
+                    {(hydratedTopFriends.length > 0 || (userData.topFriends && userData.topFriends.length > 0)) ? (
                         <View style={styles.topFriendsContainer}>
-                            {userData.topFriends.map((friend) => (
+                            {(hydratedTopFriends.length > 0 ? hydratedTopFriends : userData.topFriends).map((friend) => (
                                 <TouchableOpacity
                                     key={friend.uid}
                                     style={styles.topFriendItem}
