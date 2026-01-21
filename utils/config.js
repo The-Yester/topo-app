@@ -4,5 +4,5 @@ export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 export const ADMIN_UIDS = [
     'KoHfmZ8BaJajnmB08xnYfEaurhL2', // User 1
-    'S1xjJpyK9CUdm7siW5uPZnEHKVd2'  // User 2
+    'GoHxj8p78ZMVWJNCu0bTsLqGPQM2'  // User 2
 ];
