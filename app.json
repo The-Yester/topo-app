@@ -8,7 +8,7 @@
       "android"
     ],
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/TOPO_Camera_Logo.jpg",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "splash": {
