@@ -14,7 +14,8 @@ import {
     Platform,
     StatusBar,
     SafeAreaView,
-    KeyboardAvoidingView
+    KeyboardAvoidingView,
+    Animated // Added for Toast
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MoviesContext } from '../context/MoviesContext';
@@ -58,6 +59,27 @@ const MovieDetailScreen = ({ route }) => {
     const [loading, setLoading] = useState(true);
 
     const [globalStats, setGlobalStats] = useState(null);
+
+    // Toast State
+    const [toastMessage, setToastMessage] = useState('');
+    const toastOpacity = useRef(new Animated.Value(0)).current;
+
+    const showToast = (message) => {
+        setToastMessage(message);
+        Animated.sequence([
+            Animated.timing(toastOpacity, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+            Animated.delay(2000),
+            Animated.timing(toastOpacity, {
+                toValue: 0,
+                duration: 300,
+                useNativeDriver: true,
+            })
+        ]).start();
+    };
 
     // Rating State
     const [detailedAwardsRatings, setDetailedAwardsRatings] = useState({});
@@ -375,21 +397,33 @@ const MovieDetailScreen = ({ route }) => {
                     {/* ... (Ratings columns remain same) ... */}
                     <View style={styles.yourRatingColumn}>
                         <Text style={styles.ratingHeader}>Your Rating</Text>
-                        {userRating > 0 || (ratingMethod === 'Percentage' && userRating >= 0) ? (
-                            <>
-                                {ratingMethod === '1-5' ? (
-                                    <View style={{ marginBottom: 5 }}>
-                                        <PizzaRating initialRating={userRating} readonly={true} size={60} />
-                                    </View>
-                                ) : null}
+                        <View style={styles.ratingContentContainer}>
+                            {userRating > 0 || (ratingMethod === 'Percentage' && userRating >= 0) ? (
+                                <>
+                                    <Text style={styles.yourScoreText}>
+                                        {`${parseFloat(userRating).toFixed(ratingMethod === 'Percentage' ? 0 : 1)}`}
+                                        {ratingMethod === 'Percentage' ? '%' : `/${maxRating}`}
+                                    </Text>
 
-                                <Text style={styles.yourScoreText}>
-                                    {`${parseFloat(userRating).toFixed(ratingMethod === 'Percentage' ? 0 : 1)}`}
-                                    {ratingMethod === 'Percentage' ? '%' : `/${maxRating}`}
-                                </Text>
-                                <Text style={styles.yourMethodText}>({ratingMethod})</Text>
-                            </>
-                        ) : <Text style={styles.notRatedText}>Not Yet Rated</Text>}
+                                    <View style={{ marginTop: 8 }}>
+                                        {(ratingMethod === '1-5' || ratingMethod === 'Pizza') && (
+                                            <MaterialIcon name="pizza" size={24} color="#FF5722" />
+                                        )}
+                                        {(ratingMethod === '1-10' || ratingMethod === 'Classic') && (
+                                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center' }}>
+                                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#000' }}>10</Text>
+                                            </View>
+                                        )}
+                                        {ratingMethod === 'Percentage' && (
+                                            <Icon name="percent" size={20} color="#4CAF50" />
+                                        )}
+                                        {ratingMethod === 'Awards' && (
+                                            <Icon name="trophy" size={24} color="#FFD700" />
+                                        )}
+                                    </View>
+                                </>
+                            ) : <Text style={styles.notRatedText}>Not Yet Rated</Text>}
+                        </View>
                     </View>
                     <View style={styles.usersRatingsColumn}>
                         <Text style={styles.ratingHeader}>TOPO Users</Text>
@@ -445,12 +479,28 @@ const MovieDetailScreen = ({ route }) => {
                     </TouchableOpacity>
 
                     {/* Row 2 */}
-                    <TouchableOpacity style={[styles.gridButton, { backgroundColor: '#ff8c00' }]} onPress={() => { if (movie) addMovieToList(1, movie) }}>
+                    <TouchableOpacity
+                        style={[styles.gridButton, { backgroundColor: '#ff8c00' }]}
+                        onPress={() => {
+                            if (movie) {
+                                addMovieToList(1, movie);
+                                showToast("Added to Favorites");
+                            }
+                        }}
+                    >
                         <Icon name="heart" size={16} color="white" style={{ marginRight: 8 }} />
                         <Text style={styles.gridButtonText}>Favorites</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.gridButton, { backgroundColor: '#4682b4' }]} onPress={() => { if (movie) addMovieToList(2, movie) }}>
+                    <TouchableOpacity
+                        style={[styles.gridButton, { backgroundColor: '#4682b4' }]}
+                        onPress={() => {
+                            if (movie) {
+                                addMovieToList(2, movie);
+                                showToast("Added to Watchlist");
+                            }
+                        }}
+                    >
                         <Icon name="bookmark" size={16} color="white" style={{ marginRight: 8 }} />
                         <Text style={styles.gridButtonText}>Watchlist</Text>
                     </TouchableOpacity>
@@ -605,40 +655,52 @@ const MovieDetailScreen = ({ route }) => {
             {/* Share Preview Modal */}
             <Modal animationType="slide" transparent={true} visible={shareModalVisible} onRequestClose={() => setShareModalVisible(false)}>
                 <View style={styles.modalContainer}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Share Output Preview</Text>
-                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
-                            {/* The Capture Container */}
-                            <View ref={viewShotRef} collapsable={false} style={styles.shareCard}>
-                                <Image source={{ uri: posterUrl }} style={styles.shareBackground} resizeMode="cover" blurRadius={20} />
-                                <View style={styles.shareOverlay} />
+                    <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+                        <ScrollView contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+                            <Text style={styles.modalTitle}>Share Output Preview</Text>
+                            <View style={{ justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+                                {/* The Capture Container */}
+                                <View ref={viewShotRef} collapsable={false} style={styles.shareCard}>
+                                    <Image source={{ uri: posterUrl }} style={styles.shareBackground} resizeMode="cover" blurRadius={20} />
+                                    <View style={styles.shareOverlay} />
 
-                                <View style={styles.shareHeader}>
-                                    <Image source={topoLogo} style={styles.shareLogo} resizeMode="contain" />
-                                </View>
-
-                                <View style={styles.shareBody}>
-                                    <Image source={{ uri: posterUrl }} style={styles.sharePoster} resizeMode="cover" />
-                                    <View style={styles.shareTextContainer}>
-                                        <Text style={styles.shareUserText}>I just rated</Text>
-                                        <Text style={styles.shareMovieTitle}>{movie?.title}</Text>
-                                        <Text style={styles.shareUserRating}>
-                                            {userRating > 0 ? (ratingMethod === 'Percentage' ? `${userRating}%` : `${userRating}/${maxRating}`) : "Highly Rated"}
-                                        </Text>
-                                        <Text style={styles.shareOnText}>on TOPO</Text>
+                                    <View style={styles.shareHeader}>
+                                        <Image source={topoLogo} style={styles.shareLogo} resizeMode="contain" />
                                     </View>
-                                </View>
-                                <Text style={styles.shareFooterText}>Download TOPO today!</Text>
-                            </View>
-                        </View>
 
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-around', width: '100%' }}>
-                            <Button title="Share Now" onPress={handleShare} color="#8a2be2" />
-                            <Button title="Close" onPress={() => setShareModalVisible(false)} color="#FF6347" />
-                        </View>
+                                    <View style={styles.shareBody}>
+                                        <Image source={{ uri: posterUrl }} style={styles.sharePoster} resizeMode="cover" />
+                                        <View style={styles.shareTextContainer}>
+                                            <Text style={styles.shareUserText}>I just rated</Text>
+                                            <Text style={styles.shareMovieTitle}>{movie?.title}</Text>
+                                            <Text style={styles.shareUserRating}>
+                                                {userRating > 0 ? (ratingMethod === 'Percentage' ? `${userRating}%` : `${userRating}/${maxRating}`) : "Highly Rated"}
+                                            </Text>
+                                            <Text style={styles.shareOnText}>on TOPO</Text>
+                                        </View>
+                                    </View>
+                                    <Text style={styles.shareFooterText}>Download TOPO today!</Text>
+                                </View>
+                            </View>
+
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-around', width: '100%' }}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 20 }}>
+                                    <TouchableOpacity style={styles.modalPrimaryButton} onPress={handleShare}>
+                                        <Text style={styles.modalPrimaryButtonText}>Share Now</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.modalSecondaryButton} onPress={() => setShareModalVisible(false)}>
+                                        <Text style={styles.modalSecondaryButtonText}>Close</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </ScrollView>
                     </View>
                 </View>
             </Modal>
+            {/* Toast Notification */}
+            <Animated.View style={[styles.toastContainer, { opacity: toastOpacity, transform: [{ translateY: toastOpacity.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) }] }]}>
+                <Text style={styles.toastText}>{toastMessage}</Text>
+            </Animated.View>
         </SafeAreaView>
     );
 };
@@ -740,10 +802,18 @@ const styles = StyleSheet.create({
     yourRatingColumn: {
         flex: 1,
         alignItems: 'center',
+        // justifyContent: 'center', // Removed to keep header at top
         padding: 10,
         borderRadius: 8,
         marginRight: 10,
         backgroundColor: '#1e1e2d',
+    },
+    ratingContentContainer: {
+        flex: 1,
+        justifyContent: 'flex-start', // Moved to top as requested
+        alignItems: 'center',
+        width: '100%',
+        paddingTop: 10,
     },
     usersRatingsColumn: {
         flex: 1.2,
@@ -764,6 +834,7 @@ const styles = StyleSheet.create({
         fontSize: 26,
         fontWeight: 'bold',
         color: '#FF8C00',
+        textAlign: 'center', // Added for horizontal text alignment
     },
     yourMethodText: {
         fontSize: 12,
@@ -1064,6 +1135,66 @@ const styles = StyleSheet.create({
         fontSize: 8,
         opacity: 0.6,
         letterSpacing: 1
+    },
+    // Toast Styles
+    toastContainer: {
+        position: 'absolute',
+        bottom: 50,
+        left: '20%', // approximate centering
+        right: '20%',
+        backgroundColor: 'rgba(50, 50, 50, 0.9)',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 25,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    toastText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 'bold',
+        textAlign: 'center'
+    },
+    // Custom Modal Buttons
+    modalPrimaryButton: {
+        backgroundColor: '#8a2be2',
+        paddingVertical: 12,
+        paddingHorizontal: 25,
+        borderRadius: 25, // Bubbly
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#8a2be2',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 5,
+        minWidth: 120
+    },
+    modalPrimaryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    modalSecondaryButton: {
+        backgroundColor: '#ff6347',
+        paddingVertical: 12,
+        paddingHorizontal: 25,
+        borderRadius: 25, // Bubbly
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 120
+        // No shadow to differentiate hierarchy, or add if desired
+    },
+    modalSecondaryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
     }
 });
 
