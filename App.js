@@ -110,6 +110,7 @@ function AppNavigator() {
                     <Stack.Screen name="ConnectionDetail" component={ConnectionDetailScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="RevealScreen" component={RevealScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="PublicProfile" component={PublicProfileScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="FollowList" component={FollowListScreen} options={{ headerShown: false }} />
                 </Stack.Navigator>
             </NavigationContainer>
         </MoviesProvider>

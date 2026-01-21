@@ -13,7 +13,8 @@ import {
     ScrollView,
     Platform,
     StatusBar,
-    SafeAreaView
+    SafeAreaView,
+    KeyboardAvoidingView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MoviesContext } from '../context/MoviesContext';
@@ -586,14 +587,19 @@ const MovieDetailScreen = ({ route }) => {
             </Modal>
 
             <Modal animationType="slide" transparent={true} visible={reviewModalVisible} onRequestClose={() => setReviewModalVisible(false)}>
-                <View style={styles.modalContainer}><View style={styles.modalContent}>
-                    <Text style={styles.modalTitle}>Write a Review for {movie?.title}</Text>
-                    <TextInput style={styles.reviewInput} multiline placeholder="Your review..." placeholderTextColor="#888" value={reviewText} onChangeText={setReviewText} textAlignVertical="top" />
-                    <View style={styles.modalButtonSeparator} />
-                    <Button title="Submit Review" onPress={handleReviewSubmit} />
-                    <View style={styles.modalButtonSeparator} />
-                    <Button title="Cancel" onPress={() => setReviewModalVisible(false)} color="#FF6347" />
-                </View></View>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={styles.modalContainer}
+                >
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Write a Review for {movie?.title}</Text>
+                        <TextInput style={styles.reviewInput} multiline placeholder="Your review..." placeholderTextColor="#888" value={reviewText} onChangeText={setReviewText} textAlignVertical="top" />
+                        <View style={styles.modalButtonSeparator} />
+                        <Button title="Submit Review" onPress={handleReviewSubmit} />
+                        <View style={styles.modalButtonSeparator} />
+                        <Button title="Cancel" onPress={() => setReviewModalVisible(false)} color="#FF6347" />
+                    </View>
+                </KeyboardAvoidingView>
             </Modal>
 
             {/* Share Preview Modal */}

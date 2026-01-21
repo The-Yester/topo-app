@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import US_CITIES from '../data/US_Cities';
@@ -156,106 +156,112 @@ const SignUpScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Icon name="arrow-left" size={24} color="#ff8c00" />
-                </TouchableOpacity>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <Icon name="arrow-left" size={24} color="#ff8c00" />
+                    </TouchableOpacity>
 
-                <Text style={styles.title}>Join TOPO</Text>
-                <Text style={styles.subtitle}>Start your cinema journey.</Text>
+                    <Text style={styles.title}>Join TOPO</Text>
+                    <Text style={styles.subtitle}>Start your cinema journey.</Text>
 
-                <View style={styles.formContainer}>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Full Name"
-                        placeholderTextColor="#666"
-                        onChangeText={setName}
-                        value={name}
-                    />
-
-                    <View style={styles.inputGroup}>
-                        <TextInput
-                            style={[
-                                styles.input,
-                                usernameError && { borderColor: '#e74c3c' } // Red border on error
-                            ]}
-                            placeholder="Username"
-                            placeholderTextColor="#666"
-                            onChangeText={handleUsernameChange}
-                            value={username}
-                            autoCapitalize="none"
-                            onBlur={() => checkUsernameUnique(username)}
-                        />
-                        {usernameError ? (
-                            <View style={styles.errorContainer}>
-                                <Text style={styles.errorText}>{usernameError}</Text>
-                                <Text style={styles.suggestionLabel}>Suggestions:</Text>
-                                <View style={styles.suggestionRow}>
-                                    {suggestions.map((sugg, index) => (
-                                        <TouchableOpacity key={index} style={styles.suggestionChip} onPress={() => applySuggestion(sugg)}>
-                                            <Text style={styles.suggestionText}>{sugg}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </View>
-                        ) : (
-                            <Text style={styles.helperText}>3-20 chars, no spaces. Letters, numbers & _ only.</Text>
-                        )}
-                    </View>
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Email Address"
-                        placeholderTextColor="#666"
-                        onChangeText={setEmail}
-                        value={email}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                    />
-
-                    <View style={styles.inputGroup}>
+                    <View style={styles.formContainer}>
                         <TextInput
                             style={styles.input}
-                            placeholder="Password"
+                            placeholder="Full Name"
                             placeholderTextColor="#666"
-                            secureTextEntry
-                            onChangeText={setPassword}
-                            value={password}
+                            onChangeText={setName}
+                            value={name}
                         />
-                        <Text style={styles.helperText}>Min 8 chars, 1 letter & 1 number</Text>
-                    </View>
 
-                    <Text style={styles.label}>Location</Text>
-                    <View style={styles.pickerContainer}>
-                        <Picker
-                            selectedValue={location}
-                            onValueChange={setLocation}
-                            style={styles.picker}
-                            dropdownIconColor="#ff8c00"
-                        // Android: Dialog text color depends on system theme. 
-                        // Avoid setting itemStyle or color prop to white if background is white.
+                        <View style={styles.inputGroup}>
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    usernameError && { borderColor: '#e74c3c' } // Red border on error
+                                ]}
+                                placeholder="Username"
+                                placeholderTextColor="#666"
+                                onChangeText={handleUsernameChange}
+                                value={username}
+                                autoCapitalize="none"
+                                onBlur={() => checkUsernameUnique(username)}
+                            />
+                            {usernameError ? (
+                                <View style={styles.errorContainer}>
+                                    <Text style={styles.errorText}>{usernameError}</Text>
+                                    <Text style={styles.suggestionLabel}>Suggestions:</Text>
+                                    <View style={styles.suggestionRow}>
+                                        {suggestions.map((sugg, index) => (
+                                            <TouchableOpacity key={index} style={styles.suggestionChip} onPress={() => applySuggestion(sugg)}>
+                                                <Text style={styles.suggestionText}>{sugg}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
+                            ) : (
+                                <Text style={styles.helperText}>3-20 chars, no spaces. Letters, numbers & _ only.</Text>
+                            )}
+                        </View>
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Email Address"
+                            placeholderTextColor="#666"
+                            onChangeText={setEmail}
+                            value={email}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                        />
+
+                        <View style={styles.inputGroup}>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Password"
+                                placeholderTextColor="#666"
+                                secureTextEntry
+                                onChangeText={setPassword}
+                                value={password}
+                            />
+                            <Text style={styles.helperText}>Min 8 chars, 1 letter & 1 number</Text>
+                        </View>
+
+                        <Text style={styles.label}>Location</Text>
+                        <View style={styles.pickerContainer}>
+                            <Picker
+                                selectedValue={location}
+                                onValueChange={setLocation}
+                                style={styles.picker}
+                                dropdownIconColor="#ff8c00"
+                            // Android: Dialog text color depends on system theme. 
+                            // Avoid setting itemStyle or color prop to white if background is white.
+                            >
+                                {US_CITIES.map((city) => (
+                                    <Picker.Item
+                                        key={city}
+                                        label={city}
+                                        value={city}
+                                        // Remove explicit color prop for Android to let system default ensure visibility
+                                        color={Platform.OS === 'ios' ? '#fff' : undefined}
+                                    />
+                                ))}
+                            </Picker>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.signupButton, loading && styles.disabledButton]}
+                            onPress={handleSignUp}
+                            disabled={loading}
                         >
-                            {US_CITIES.map((city) => (
-                                <Picker.Item
-                                    key={city}
-                                    label={city}
-                                    value={city}
-                                    // Remove explicit color prop for Android to let system default ensure visibility
-                                    color={Platform.OS === 'ios' ? '#fff' : undefined}
-                                />
-                            ))}
-                        </Picker>
+                            <Text style={styles.signupButtonText}>{loading ? 'Creating Account...' : 'Sign Up'}</Text>
+                        </TouchableOpacity>
                     </View>
-
-                    <TouchableOpacity
-                        style={[styles.signupButton, loading && styles.disabledButton]}
-                        onPress={handleSignUp}
-                        disabled={loading}
-                    >
-                        <Text style={styles.signupButtonText}>{loading ? 'Creating Account...' : 'Sign Up'}</Text>
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image, ActivityIndicator, Animated } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image, ActivityIndicator, Animated, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 // import AsyncStorage from '@react-native-async-storage/async-storage'; // Unused
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
@@ -103,48 +103,55 @@ const LoginScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* 1. Top Logo Section */}
-            <View style={styles.logoContainer}>
-                <Image
-                    source={require('../assets/TOPO_logo_Full.jpg')}
-                    style={styles.logoImage}
-                />
-            </View>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+            >
+                <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+                    {/* 1. Top Logo Section */}
+                    <View style={styles.logoContainer}>
+                        <Image
+                            source={require('../assets/TOPO_logo_Full.jpg')}
+                            style={styles.logoImage}
+                        />
+                    </View>
 
-            {/* 2. Form Section */}
-            <View style={styles.formContainer}>
-                <Text style={styles.mainSlogan}>The Only Picture Opinion</Text>
-                <Text style={styles.tagline}>Rate | Share | Match</Text>
-                <Text style={styles.subTagline}>& Eat Pizza! 🍕</Text>
+                    {/* 2. Form Section */}
+                    <View style={styles.formContainer}>
+                        <Text style={styles.mainSlogan}>The Only Picture Opinion</Text>
+                        <Text style={styles.tagline}>Rate | Share | Match</Text>
+                        <Text style={styles.subTagline}>& Eat Pizza! 🍕</Text>
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    placeholderTextColor="#666"
-                    onChangeText={setEmail}
-                    value={email}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    placeholderTextColor="#666"
-                    secureTextEntry
-                    onChangeText={setPassword}
-                    value={password}
-                />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Email"
+                            placeholderTextColor="#666"
+                            onChangeText={setEmail}
+                            value={email}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                        />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Password"
+                            placeholderTextColor="#666"
+                            secureTextEntry
+                            onChangeText={setPassword}
+                            value={password}
+                        />
 
-                <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-                    <Text style={styles.loginButtonText}>Login</Text>
-                </TouchableOpacity>
+                        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+                            <Text style={styles.loginButtonText}>Login</Text>
+                        </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => navigation.navigate('SignUp')} style={styles.signupLink}>
-                    <Text style={styles.signupText}>
-                        Don't have an account? <Text style={styles.signupTextBold}>Sign Up</Text>
-                    </Text>
-                </TouchableOpacity>
-            </View>
+                        <TouchableOpacity onPress={() => navigation.navigate('SignUp')} style={styles.signupLink}>
+                            <Text style={styles.signupText}>
+                                Don't have an account? <Text style={styles.signupTextBold}>Sign Up</Text>
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };

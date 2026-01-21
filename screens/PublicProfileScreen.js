@@ -251,16 +251,33 @@ const PublicProfileScreen = () => {
                     <Text style={styles.bio}>{userData.bio || "No bio yet."}</Text>
 
                     {/* Stats Container */}
+                    {/* Stats Container */}
                     <View style={styles.statsContainer}>
-                        <View style={styles.statItem}>
+                        <TouchableOpacity
+                            style={styles.statItem}
+                            onPress={() => navigation.navigate('FollowList', {
+                                title: `${userData.username}'s Following`,
+                                userList: userData.following || [],
+                                currentUserId: auth.currentUser?.uid,
+                                isOwnFollowers: false
+                            })}
+                        >
                             <Text style={styles.statNumber}>{userData.following?.length || 0}</Text>
                             <Text style={styles.statLabel}>Following</Text>
-                        </View>
+                        </TouchableOpacity>
                         <View style={styles.statSeparator} />
-                        <View style={styles.statItem}>
+                        <TouchableOpacity
+                            style={styles.statItem}
+                            onPress={() => navigation.navigate('FollowList', {
+                                title: `${userData.username}'s Followers`,
+                                userList: userData.followers || [],
+                                currentUserId: auth.currentUser?.uid,
+                                isOwnFollowers: false
+                            })}
+                        >
                             <Text style={styles.statNumber}>{userData.followers?.length || 0}</Text>
                             <Text style={styles.statLabel}>Followers</Text>
-                        </View>
+                        </TouchableOpacity>
                     </View>
                 </View>
 

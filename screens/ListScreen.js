@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity, SafeAreaView, Platform, StatusBar, KeyboardAvoidingView } from 'react-native';
 import { MoviesContext, OVERALL_RATINGS_LIST_ID, OVERALL_RATINGS_LIST_NAME } from '../context/MoviesContext';
 import { v4 as uuidv4 } from 'uuid';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -76,32 +76,38 @@ const ListScreen = ({ navigation }) => {
     return (
         <SafeAreaView style={styles.container}>
             <Text style={styles.title}>Your Movie Lists</Text>
-            <FlatList
-                data={allLists}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                    <Swipeable renderRightActions={() => rightSwipeActions(item)}>
-                        <TouchableOpacity
-                            style={styles.listItem}
-                            onPress={() => navigateToListDetails(item)}
-                        >
-                            <Text style={styles.listName}>{item.name}</Text>
-                            <Text style={styles.listCount}>{item.movies ? item.movies.length : 0} movies</Text>
-                        </TouchableOpacity>
-                    </Swipeable>
-                )}
-                ListEmptyComponent={<Text style={styles.empty}>No lists yet. Add one!</Text>}
-            />
-            <View style={styles.inputContainer}>
-                <TextInput
-                    style={styles.input}
-                    placeholder="New List Name..."
-                    placeholderTextColor="#666"
-                    value={newListName}
-                    onChangeText={setNewListName}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+            >
+                <FlatList
+                    data={allLists}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                        <Swipeable renderRightActions={() => rightSwipeActions(item)}>
+                            <TouchableOpacity
+                                style={styles.listItem}
+                                onPress={() => navigateToListDetails(item)}
+                            >
+                                <Text style={styles.listName}>{item.name}</Text>
+                                <Text style={styles.listCount}>{item.movies ? item.movies.length : 0} movies</Text>
+                            </TouchableOpacity>
+                        </Swipeable>
+                    )}
+                    ListEmptyComponent={<Text style={styles.empty}>No lists yet. Add one!</Text>}
                 />
-                <Button title="Add List" onPress={handleAddList} color="#ff8c00" />
-            </View>
+                <View style={styles.inputContainer}>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="New List Name..."
+                        placeholderTextColor="#666"
+                        value={newListName}
+                        onChangeText={setNewListName}
+                    />
+                    <Button title="Add List" onPress={handleAddList} color="#ff8c00" />
+                </View>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };

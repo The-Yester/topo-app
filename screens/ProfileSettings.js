@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, FlatList, Image, Modal, Alert, ActivityIndicator, Platform, Linking } from 'react-native';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions, useIsFocused } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { MoviesContext } from '../context/MoviesContext';
 import { Picker } from '@react-native-picker/picker';
@@ -62,9 +62,13 @@ const ProfileSettings = ({ navigation }) => {
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
 
+    const isFocused = useIsFocused();
+
     useEffect(() => {
-        loadUserData();
-    }, []);
+        if (isFocused) {
+            loadUserData();
+        }
+    }, [isFocused]);
 
     // Hydrate Top Friends whenever the list changes (or on load)
     useEffect(() => {
@@ -502,14 +506,31 @@ const ProfileSettings = ({ navigation }) => {
                 <View style={styles.section}>
                     <Text style={styles.label}>My Network</Text>
                     <View style={styles.statsRow}>
-                        <View style={styles.statItem}>
+                        <TouchableOpacity
+                            style={styles.statItem}
+                            onPress={() => navigation.navigate('FollowList', {
+                                title: 'Following',
+                                userList: following,
+                                currentUserId: auth.currentUser.uid, // Pass current ID 
+                                isOwnFollowing: true // Enable Unfollow
+                            })}
+                        >
                             <Text style={styles.statNum}>{following.length}</Text>
                             <Text style={styles.statLabel}>Following</Text>
-                        </View>
-                        <View style={styles.statItem}>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.statItem}
+                            onPress={() => navigation.navigate('FollowList', {
+                                title: 'Followers',
+                                userList: followers,
+                                currentUserId: auth.currentUser.uid,
+                                isOwnFollowers: true // Enable removal
+                            })}
+                        >
                             <Text style={styles.statNum}>{followers.length}</Text>
                             <Text style={styles.statLabel}>Followers</Text>
-                        </View>
+                        </TouchableOpacity>
                     </View>
                     <TouchableOpacity style={styles.outlineButton} onPress={() => setIsFriendModalVisible(true)}>
                         <Text style={styles.outlineButtonText}>Find Friends</Text>
@@ -783,7 +804,14 @@ const styles = StyleSheet.create({
 
     // Modals
     searchModalContainer: { flex: 1, backgroundColor: '#0a0a1a' },
-    searchHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#333' },
+    searchHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#333',
+        marginTop: Platform.OS === 'ios' ? 20 : 0 // Lower header for Friend Search
+    },
     searchInput: { flex: 1, backgroundColor: '#1a1a2e', color: '#fff', borderRadius: 8, padding: 10, fontSize: 16, marginLeft: 15 },
     searchItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, backgroundColor: '#161625', padding: 10, borderRadius: 8 },
     searchPoster: { width: 45, height: 68, borderRadius: 4, marginRight: 10 },

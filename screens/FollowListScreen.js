@@ -1,21 +1,141 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
-import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ActivityIndicator, Alert } from 'react-native';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const FollowListScreen = ({ route, navigation }) => {
-    const { title, userList, currentUserId } = route.params;
-    // userList should be array of { uid, username, profilePhoto }
-    // OR we could fetch by ID if list is just IDs. 
-    // based on previous ProfileSettings impl, we store full objects (uid, username, photo) in the array. matching that.
+    const { title, userList, currentUserId, isOwnFollowers, isOwnFollowing } = route.params;
 
-    const [listData, setListData] = useState(userList || []);
+    // Deduplicate userList to prevent "same key" warning
+    const uniqueUserList = React.useMemo(() => {
+        const list = userList || [];
+        const seen = new Set();
+        return list.filter(item => {
+            if (seen.has(item.uid)) {
+                return false;
+            }
+            seen.add(item.uid);
+            return true;
+        });
+    }, [userList]);
+
+    const [listData, setListData] = useState(uniqueUserList);
     const [loading, setLoading] = useState(false);
+
+    // Hydrate list with fresh data (Profile Photos might be stale in the array)
+    useEffect(() => {
+        const fetchLatestProfiles = async () => {
+            const hydratedList = await Promise.all(uniqueUserList.map(async (user) => {
+                try {
+                    const userSnap = await getDoc(doc(db, "users", user.uid));
+                    if (userSnap.exists()) {
+                        const data = userSnap.data();
+                        return { ...user, profilePhoto: data.profilePhoto, username: data.username };
+                    }
+                    return user;
+                } catch (error) {
+                    console.error("Error fetching user profile:", error);
+                    return user;
+                }
+            }));
+            setListData(hydratedList);
+        };
+
+        fetchLatestProfiles();
+    }, [uniqueUserList]);
 
     // We might want to refresh this data or fetch 'isFollowing' status for each if viewing someone else's list.
     // For now, simple list view.
+
+    const handleRemoveFollower = async (follower) => {
+        Alert.alert(
+            "Remove Follower",
+            `Are you sure you want to remove ${follower.username} as a follower?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Remove",
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const currentUserRef = doc(db, "users", currentUserId);
+                            const followerRef = doc(db, "users", follower.uid);
+
+                            // 1. Remove from my 'followers' list
+                            const userSnap = await getDoc(currentUserRef);
+                            if (!userSnap.exists()) return;
+
+                            const currentFollowers = userSnap.data().followers || [];
+                            const newFollowers = currentFollowers.filter(f => f.uid !== follower.uid);
+
+                            await updateDoc(currentUserRef, { followers: newFollowers });
+
+                            // 2. Remove me from their 'following' list
+                            const followerSnap = await getDoc(followerRef);
+                            if (followerSnap.exists()) {
+                                const theirFollowing = followerSnap.data().following || [];
+                                const newTheirFollowing = theirFollowing.filter(f => f.uid !== currentUserId);
+                                await updateDoc(followerRef, { following: newTheirFollowing });
+                            }
+
+                            // 3. Update UI
+                            setListData(prev => prev.filter(item => item.uid !== follower.uid));
+
+                        } catch (error) {
+                            console.error("Error removing follower:", error);
+                            Alert.alert("Error", "Could not remove follower.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleUnfollow = async (targetUser) => {
+        Alert.alert(
+            "Unfollow",
+            `Are you sure you want to unfollow ${targetUser.username}?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Unfollow",
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const currentUserRef = doc(db, "users", currentUserId);
+                            const targetRef = doc(db, "users", targetUser.uid);
+
+                            // 1. Remove from my 'following' list
+                            const userSnap = await getDoc(currentUserRef);
+                            if (!userSnap.exists()) return;
+
+                            const currentFollowing = userSnap.data().following || [];
+                            const newFollowing = currentFollowing.filter(f => f.uid !== targetUser.uid);
+
+                            await updateDoc(currentUserRef, { following: newFollowing });
+
+                            // 2. Remove me from their 'followers' list
+                            const targetSnap = await getDoc(targetRef);
+                            if (targetSnap.exists()) {
+                                const theirFollowers = targetSnap.data().followers || [];
+                                const newTheirFollowers = theirFollowers.filter(f => f.uid !== currentUserId);
+                                await updateDoc(targetRef, { followers: newTheirFollowers });
+                            }
+
+                            // 3. Update UI
+                            setListData(prev => prev.filter(item => item.uid !== targetUser.uid));
+
+                        } catch (error) {
+                            console.error("Error unfollowing:", error);
+                            Alert.alert("Error", "Could not unfollow.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -31,18 +151,30 @@ const FollowListScreen = ({ route, navigation }) => {
                 data={listData}
                 keyExtractor={(item) => item.uid}
                 renderItem={({ item }) => (
-                    <TouchableOpacity style={styles.userRow} onPress={() => navigation.navigate('PublicProfile', { userId: item.uid })}>
-                        <Image
-                            source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')}
-                            style={styles.avatar}
-                        />
-                        <Text style={styles.username}>{item.username}</Text>
+                    <View style={styles.userRow}>
+                        <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                            onPress={() => navigation.navigate('PublicProfile', { userId: item.uid })}
+                        >
+                            <Image
+                                source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')}
+                                style={styles.avatar}
+                            />
+                            <Text style={styles.username}>{item.username}</Text>
+                        </TouchableOpacity>
 
-                        {/* 
-                           Future: "Follow" button if viewing someone else's followers 
-                           and I don't follow this person.
-                        */}
-                    </TouchableOpacity>
+                        {isOwnFollowers && (
+                            <TouchableOpacity onPress={() => handleRemoveFollower(item)} style={styles.removeButton}>
+                                <Text style={styles.removeButtonText}>Remove</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {isOwnFollowing && (
+                            <TouchableOpacity onPress={() => handleUnfollow(item)} style={styles.removeButton}>
+                                <Text style={styles.removeButtonText}>Unfollow</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 )}
                 ListEmptyComponent={<Text style={styles.emptyText}>No users found.</Text>}
                 contentContainerStyle={{ padding: 20 }}
@@ -95,6 +227,19 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         textAlign: 'center',
         marginTop: 20
+    },
+    removeButton: {
+        backgroundColor: '#333',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 15,
+        borderWidth: 1,
+        borderColor: '#555'
+    },
+    removeButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold'
     }
 });
 
