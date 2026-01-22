@@ -22,7 +22,8 @@ const ratingMethods = [
     { id: '1-10', name: "1-10 (Classic)" },
     { id: '1-5', name: "Pizza Rating" },
     { id: 'Percentage', name: "Percentage (1-100%)" },
-    { id: 'Awards', name: "Awards (Detailed)" }
+    { id: 'Awards', name: "Awards (Detailed)" },
+    { id: 'Thumbs', name: "E&R Variation" }
 ];
 
 const ProfileSettings = ({ navigation }) => {
@@ -558,7 +559,16 @@ const ProfileSettings = ({ navigation }) => {
 
                 {/* Rating System */}
                 <View style={styles.section}>
-                    <Text style={styles.label}>Preferred Rating System</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={[styles.label, { marginBottom: 0 }]}>Preferred Rating System</Text>
+                        <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => navigation.navigate('RatingInstructions')}
+                        >
+                            <Icon name="info-circle" size={16} color="#ff8c00" style={{ marginRight: 5 }} />
+                            <Text style={{ color: '#ff8c00', fontSize: 12, fontWeight: 'bold' }}>Instructions</Text>
+                        </TouchableOpacity>
+                    </View>
                     <View style={styles.pickerWrapper}>
                         <Picker
                             selectedValue={selectedRatingSystem}

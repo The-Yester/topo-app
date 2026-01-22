@@ -30,6 +30,7 @@ import PizzaRating from '../context/PizzaRating';
 import AwardsRating from '../context/AwardsRating';
 import PercentageRating from '../context/PercentageRating';
 import ClassicRating from '../context/ClassicRating';
+import ThumbsRating from '../components/ThumbsRating';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 
@@ -40,13 +41,14 @@ const appBackground = require('../assets/TOPO_Background_3.4.png');
 
 const MovieDetailScreen = ({ route }) => {
     const navigation = useNavigation();
-    const { ratingMethod, addMovieToList, addToRecentlyWatched, submitRating, movieLists, overallRatedMovies } = useContext(MoviesContext);
+    const { ratingMethod, addMovieToList, addToRecentlyWatched, addToRecentActivity, submitRating, movieLists, overallRatedMovies } = useContext(MoviesContext);
     const [userRating, setUserRating] = useState(0);
     const { movieId } = route.params;
     const [movie, setMovie] = useState(null);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
     const [reviewModalVisible, setReviewModalVisible] = useState(false);
     const [listModalVisible, setListModalVisible] = useState(false);
+    const [isWatched, setIsWatched] = useState(false); // Default to FALSE so it's opt-in for "Recently Watched"
 
     // Share Feature State
     const [shareModalVisible, setShareModalVisible] = useState(false);
@@ -239,6 +241,7 @@ const MovieDetailScreen = ({ route }) => {
                 case '1-10': currentMax = 10; break;
                 case 'Percentage': currentMax = 100; break;
                 case 'Awards': currentMax = 10; break;
+                case 'Thumbs': currentMax = 4; break;
             }
             setMaxRating(currentMax);
         };
@@ -318,6 +321,8 @@ const MovieDetailScreen = ({ route }) => {
                 validatedRating = Math.max(1, Math.min(5, ratingValue));
             } else if (ratingMethod === '1-10') {
                 validatedRating = Math.max(1, Math.min(10, ratingValue));
+            } else if (ratingMethod === 'Thumbs') {
+                validatedRating = Math.max(0.5, Math.min(4, ratingValue));
             }
 
             setUserRating(validatedRating);
@@ -332,7 +337,23 @@ const MovieDetailScreen = ({ route }) => {
 
             await submitRating(movieId, ratingMethod, validatedRating, null, movieInfoForContext);
 
-            if (movie) addToRecentlyWatched({ id: movie.id, title: movie.title, poster_path: movie.poster_path });
+            if (movie) {
+                const activityItem = {
+                    id: movie.id,
+                    title: movie.title,
+                    poster_path: movie.poster_path,
+                    userRating: validatedRating,
+                    ratingMethod: ratingMethod
+                };
+
+                if (isWatched) {
+                    // If marked as Watched -> Go to Recenty Watched ONLY
+                    addToRecentlyWatched(activityItem);
+                } else {
+                    // If NOT marked as Watched -> Go to Recent Activity
+                    addToRecentActivity(activityItem);
+                }
+            }
 
             Alert.alert("Success", "Rating saved!");
         } catch (error) {
@@ -369,7 +390,23 @@ const MovieDetailScreen = ({ route }) => {
 
             await submitRating(movieId, 'Awards', overallAwardsScoreToSave, detailedAwardsRatings, movieInfoForContext);
 
-            if (movie) addToRecentlyWatched({ id: movie.id, title: movie.title, poster_path: movie.poster_path });
+            if (movie) {
+                const activityItem = {
+                    id: movie.id,
+                    title: movie.title,
+                    poster_path: movie.poster_path,
+                    userRating: overallAwardsScoreToSave,
+                    ratingMethod: 'Awards'
+                };
+
+                if (isWatched) {
+                    // If marked as Watched -> Go to Recenty Watched ONLY
+                    addToRecentlyWatched(activityItem);
+                } else {
+                    // If NOT marked as Watched -> Go to Recent Activity
+                    addToRecentActivity(activityItem);
+                }
+            }
 
             Alert.alert("Success", `Awards rating of ${overallAwardsScoreToSave.toFixed(1)} saved!`);
         } catch (error) {
@@ -420,6 +457,9 @@ const MovieDetailScreen = ({ route }) => {
                                         {ratingMethod === 'Awards' && (
                                             <Icon name="trophy" size={24} color="#FFD700" />
                                         )}
+                                        {ratingMethod === 'Thumbs' && (
+                                            <MaterialIcon name="thumb-up" size={24} color="#4CAF50" />
+                                        )}
                                     </View>
                                 </>
                             ) : <Text style={styles.notRatedText}>Not Yet Rated</Text>}
@@ -459,6 +499,14 @@ const MovieDetailScreen = ({ route }) => {
                             <Icon name="trophy" size={16} color="#FFD700" style={styles.usersRatingIcon} />
                             <Text style={styles.ratingDetailText}>
                                 {globalStats?.awards?.count > 0 ? `${globalStats.awards.average.toFixed(1)}/10` : 'N/A'}
+                            </Text>
+                        </View>
+
+                        {/* Thumbs - Thumbs Up Variation */}
+                        <View style={styles.ratingDetailRow}>
+                            <MaterialIcon name="thumb-up" size={16} color="#4CAF50" style={styles.usersRatingIcon} />
+                            <Text style={styles.ratingDetailText}>
+                                {globalStats?.thumbs?.count > 0 ? `${globalStats.thumbs.average.toFixed(1)}/4` : 'N/A'}
                             </Text>
                         </View>
                     </View>
@@ -630,8 +678,59 @@ const MovieDetailScreen = ({ route }) => {
                             </View>
                         )}
 
+                        {ratingMethod === 'Thumbs' && (
+                            <View style={{ marginVertical: 20, alignItems: 'center' }}>
+                                <ThumbsRating rating={userRating} onRate={(r) => setUserRating(r)} size={50} />
+                                <View style={styles.modalButtonSeparator} />
+                                <View style={{ flexDirection: 'row', width: '90%', justifyContent: 'space-between' }}>
+                                    <TouchableOpacity style={[styles.modalSubmitButton, { flex: 0.6, marginRight: 5, width: 'auto', backgroundColor: '#ff6b6b' }]} onPress={() => setUserRating(0)}>
+                                        <Text style={styles.modalSubmitButtonText}>Reset</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.modalSubmitButton, { flex: 1, marginLeft: 5, width: 'auto' }]} onPress={() => handleRatingSubmit(userRating)}>
+                                        <Text style={styles.modalSubmitButtonText}>Submit</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Watched Toggle (Custom Button Style) */}
+                        <TouchableOpacity
+                            style={[
+                                styles.modalSubmitButton,
+                                {
+                                    backgroundColor: isWatched ? '#333' : '#00FFFF',
+                                    flexDirection: 'row',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    paddingVertical: 10,
+                                    width: '85%',
+                                    marginTop: 15
+                                }
+                            ]}
+                            onPress={() => setIsWatched(!isWatched)}
+                        >
+                            <Text style={{ fontSize: 16, marginRight: 8 }}>{isWatched ? "✅" : "🎥"}</Text>
+                            <Text
+                                style={[
+                                    styles.modalSubmitButtonText,
+                                    {
+                                        fontSize: 14,
+                                        color: isWatched ? '#FFF' : '#000',
+                                        textAlign: 'center',
+                                        flexShrink: 1
+                                    }
+                                ]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                            >
+                                {isWatched ? "Added to Recently Watched" : "Press to add to Recently Watched"}
+                            </Text>
+                        </TouchableOpacity>
+
                         <View style={styles.modalButtonSeparator} />
-                        <Button title="Cancel" onPress={() => setRatingModalVisible(false)} color="#d32f2f" />
+                        <TouchableOpacity style={[styles.modalSecondaryButton, { width: '80%', alignSelf: 'center' }]} onPress={() => setRatingModalVisible(false)}>
+                            <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>

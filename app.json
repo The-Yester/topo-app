@@ -8,24 +8,25 @@
       "android"
     ],
     "orientation": "portrait",
-    "icon": "./assets/TOPO_Camera_Logo.jpg",
+    "icon": "./assets/fixed-icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/TOPO_logo_Full.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#23242f"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ryester.topo",
+      "buildNumber": "2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/fixed-icon.png",
         "backgroundColor": "#23242f"
       },
       "package": "com.ryester.topo"

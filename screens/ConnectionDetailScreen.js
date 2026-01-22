@@ -18,9 +18,19 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
     // Voting State
     const [votes, setVotes] = useState({});
     const [hasSubmitted, setHasSubmitted] = useState(false);
-    const [hiddenMovies, setHiddenMovies] = useState({});
-    const [skippedMovies, setSkippedMovies] = useState({}); // { movieId: true }
-    const popularPage = useRef(1); // Track pagination for refill
+
+    // Single Card Logic State
+    const [activeMovies, setActiveMovies] = useState([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const [showInstructions, setShowInstructions] = useState(false);
+
+    // Show instructions on first load if user hasn't voted yet
+    useEffect(() => {
+        if (!loading && !hasSubmitted) {
+            setShowInstructions(true);
+        }
+    }, [loading, hasSubmitted]);
 
     // ... (keep Timer state)
 
@@ -58,8 +68,12 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
     };
 
     const updateVote = async (movieId, score) => {
+        // Optimistic Update
         const newVotes = { ...votes, [movieId]: score };
         setVotes(newVotes);
+
+        // Advance Card
+        handleNextMovie();
 
         try {
             await updateDoc(doc(db, "connections", connectionId), {
@@ -68,30 +82,33 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
         } catch (error) {
             console.error("Auto-save error:", error);
         }
-
-        setTimeout(() => {
-            setHiddenMovies(prev => {
-                const newState = { ...prev, [movieId]: true };
-                checkRefill(newState);
-                return newState;
-            });
-        }, 500);
     };
 
     const handleSkip = (movieId) => {
-        setHiddenMovies(prev => {
-            const newState = { ...prev, [movieId]: true };
-            checkRefill(newState);
-            return newState;
-        });
+        // Mark as skipped (maybe store as 0 or special flag? User said "Already Watched", implying ignore)
+        // We can treat it as a "Seen IT" which removes it from their pool.
+        // Storing as 0 or -1 might be useful, or just local skip?
+        // User said: "movies that you have already rated DO NOT SHOW BACK UP". 
+        // So we should probably save this state so it persists. Using -1 for "Skipped/Watched".
+        updateVote(movieId, -1);
     };
 
-    const checkRefill = (currentHidden) => {
-        const hiddenCount = Object.keys(currentHidden || hiddenMovies).length;
-        const total = connection.matchedMovies.length;
-        const remaining = total - hiddenCount;
+    const handleNextMovie = () => {
+        // Just increment index? OR if we are filtering, we remove from array?
+        // Since we filtered `activeMovies` to be ONLY unvoted ones, we can just slice?
+        // Or just increment index.
+        if (currentIndex < activeMovies.length - 1) {
+            setCurrentIndex(prev => prev + 1);
+        } else {
+            // End of list, check refill?
+            setCurrentIndex(prev => prev + 1); // Moves it out of bounds, triggering "Caught up" view
+            checkRefill();
+        }
+    };
 
-        if (remaining < 5) {
+    const checkRefill = () => {
+        // If we are near end, fetch more
+        if (activeMovies.length - currentIndex < 3) {
             fetchMoreMovies();
         }
     };
@@ -113,16 +130,26 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                 const data = docSnap.data();
                 setConnection({ id: docSnap.id, ...data });
 
-                // Check if user has already submitted votes
                 if (data.votes && data.votes[currentUser.uid]) {
                     setHasSubmitted(true);
                     setVotes(data.votes[currentUser.uid]);
                 }
+
+                // Initialize Active Movies (Filter out what I've voted on)
+                const myVotes = data.votes?.[currentUser.uid] || {};
+                const mMovies = data.matchedMovies || [];
+
+                // We keep all movies in activeMovies but start index at first unvoted
+                // Actually, cleaner to just keeping the array stable and skipping index?
+                // Or filtering? Filtering is safer so they don't reappear.
+                const unvoted = mMovies.filter(m => !myVotes[m.id]);
+                setActiveMovies(unvoted);
+                setCurrentIndex(0); // Always start at 0 of the unvoted list
+
             } else {
                 Alert.alert("Error", "Connection not found.");
                 navigation.goBack();
             }
-            setLoading(false);
             setLoading(false);
         });
 
@@ -280,14 +307,42 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
         }
     };
 
-    const handleAddMovie = async (movie) => {
-        // Check if already in matchedMovies
-        if (connection.matchedMovies.find(m => m.id === movie.id)) {
-            Alert.alert("Already Added", "This movie is already in the list!");
-            return;
-        }
+    const [searchQuery, setSearchQuery] = useState('');
 
+    const handleSearch = async (text) => {
+        setSearchQuery(text);
+        if (text.length > 2) {
+            try {
+                const API_KEY = TMDB_API_KEY;
+                const response = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(text)}&include_adult=false`);
+                const data = await response.json();
+                if (data.results) {
+                    setDiscoveryMovies(data.results);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    };
+
+    const handleAddMovie = async (movie) => {
+        // Instant Add & Rate flow
+        Alert.alert(
+            "Rate " + movie.title,
+            "How much do you want to watch this?",
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(score => ({
+                text: String(score),
+                onPress: async () => {
+                    await finalizeAddAndRate(movie, score);
+                }
+            })),
+            { cancelable: true }
+        );
+    };
+
+    const finalizeAddAndRate = async (movie, score) => {
         try {
+            // 1. Add to connection's matchedMovies if not exists
             const newMovie = {
                 id: movie.id,
                 title: movie.title,
@@ -296,14 +351,25 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                 release_date: movie.release_date
             };
 
-            await updateDoc(doc(db, "connections", connectionId), {
-                matchedMovies: arrayUnion(newMovie)
-            });
-            Alert.alert("Added", `"${movie.title}" added to the game!`);
-            // Optional: Close modal or let them add more
+            // Check if exists
+            const exists = connection.matchedMovies.find(m => m.id === movie.id);
+
+            if (!exists) {
+                await updateDoc(doc(db, "connections", connectionId), {
+                    matchedMovies: arrayUnion(newMovie)
+                });
+            }
+
+            // 2. Submit Vote
+            await updateVote(movie.id, score);
+
+            // 3. User feedback
+            Alert.alert("Saved", `You rated "${movie.title}" a ${score}/10.`);
+            setIsDiscoveryOpen(false);
+            setSearchQuery('');
         } catch (error) {
-            console.error("Error adding movie:", error);
-            Alert.alert("Error", "Failed to add movie.");
+            console.error(error);
+            Alert.alert("Error", "Failed to save.");
         }
     };
 
@@ -353,75 +419,91 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
             {/* STATUS: VOTING */}
             {connection.status === 'voting' && (
                 <View style={{ flex: 1 }}>
+                    {/* Header Avatars */}
+                    <View style={styles.cavatarsContainer}>
+                        {connection.participantDetails?.map((p, index) => (
+                            <View key={index} style={styles.cavatarWrapper}>
+                                <Image
+                                    source={p.profilePhoto ? { uri: p.profilePhoto } : require('../assets/profile_placeholder.jpg')}
+                                    style={styles.cavatar}
+                                />
+                                <Text style={styles.cavatarName} numberOfLines={1}>{p.username}</Text>
+                            </View>
+                        ))}
+                    </View>
+
                     <View style={styles.phaseHeader}>
-                        <View>
-                            <Text style={styles.phaseTitle}>Desire Rating (1-10)</Text>
-                            <Text style={styles.phaseSub}>1 = Skip, 10 = Must Watch</Text>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.phaseTitle}>Desire Rating</Text>
+                            <Text style={styles.phaseSub}>Rate how much you want to watch this.</Text>
                         </View>
                         {!isTimeUp && (
                             <TouchableOpacity style={styles.discoveryBtn} onPress={() => setIsDiscoveryOpen(true)}>
                                 <Icon name="search" size={14} color="#fff" />
-                                <Text style={styles.discoveryBtnText}>Add Movies</Text>
+                                <Text style={styles.discoveryBtnText}>Search</Text>
                             </TouchableOpacity>
                         )}
                     </View>
 
-                    <FlatList
-                        data={connection.matchedMovies.filter(m => !hiddenMovies[m.id])}
-                        keyExtractor={item => item.id.toString()}
-                        contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-                        renderItem={({ item }) => (
-                            <View style={[styles.voteCard, { flexDirection: 'column', alignItems: 'center', padding: 20 }]}>
-                                <Image source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }} style={[styles.poster, { width: 140, height: 210, marginBottom: 15 }]} />
+                    <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
+                        {activeMovies.length > 0 && currentIndex < activeMovies.length ? (
+                            <View style={styles.singleCard}>
+                                <Image
+                                    source={{ uri: `https://image.tmdb.org/t/p/w500${activeMovies[currentIndex].poster_path}` }}
+                                    style={styles.singlePoster}
+                                    resizeMode="cover"
+                                />
 
-                                <Text style={[styles.movieTitle, { textAlign: 'center', fontSize: 22, height: 'auto', marginBottom: 15 }]} numberOfLines={2}>{item.title}</Text>
+                                <View style={styles.cardOverlay}>
+                                    <Text style={styles.singleTitle}>{activeMovies[currentIndex].title}</Text>
+                                    <Text style={styles.singleOverview} numberOfLines={3}>{activeMovies[currentIndex].overview}</Text>
 
-                                <TouchableOpacity onPress={() => handleSkip(item.id)} style={styles.alreadyWatchedBtn}>
-                                    <Text style={styles.alreadyWatchedText}>Already Watched</Text>
-                                </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => handleSkip(activeMovies[currentIndex].id)} style={styles.singleWatchedBtn}>
+                                        <Text style={styles.singleWatchedText}>Seen It / Skip</Text>
+                                    </TouchableOpacity>
 
-                                <View style={styles.sliderContainer}>
-                                    <View style={[styles.buttonGrid, { justifyContent: 'center', gap: 8 }]}>
+                                    {/* Rating Buttons */}
+                                    <View style={styles.ratingRow}>
                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
                                             <TouchableOpacity
                                                 key={num}
-                                                style={[styles.gridBtn, votes[item.id] === num && styles.gridBtnActive]}
-                                                onPress={() => updateVote(item.id, num)}
+                                                style={styles.ratingCircle}
+                                                onPress={() => updateVote(activeMovies[currentIndex].id, num)}
                                             >
-                                                <Text style={[styles.gridBtnText, votes[item.id] === num && { color: '#000' }]}>{num}</Text>
+                                                <Text style={styles.ratingNumber}>{num}</Text>
                                             </TouchableOpacity>
                                         ))}
                                     </View>
                                 </View>
                             </View>
-                        )}
-                        ListEmptyComponent={
+                        ) : (
                             <View style={styles.centerContent}>
-                                <Text style={{ color: '#666', marginTop: 20 }}>No movies left to rate!</Text>
-                                <ActivityIndicator color="#e50914" style={{ marginTop: 10 }} />
-                                <Text style={{ color: '#444', fontSize: 12 }}>Fetching more...</Text>
+                                {isTimeUp ? (
+                                    <View>
+                                        <Text style={styles.waitingText}>Voting Closed!</Text>
+                                        <Text style={styles.votedStatus}>Time to see what you picked.</Text>
+                                    </View>
+                                ) : (
+                                    <View>
+                                        <Text style={styles.waitingText}>All caught up!</Text>
+                                        <Text style={styles.votedStatus}>Waiting for others or more movies...</Text>
+                                        <ActivityIndicator color="#e50914" style={{ marginTop: 20 }} />
+                                    </View>
+                                )}
                             </View>
-                        }
-                    />
+                        )}
+                    </View>
 
                     <View style={styles.footer}>
                         {!isTimeUp ? (
-                            <Text style={{ color: '#666', textAlign: 'center', fontSize: 12 }}>Votes are saved automatically</Text>
+                            <Text style={{ color: '#666', textAlign: 'center', fontSize: 12 }}>
+                                {activeMovies.length - currentIndex} movies left to rate
+                            </Text>
                         ) : (
                             <View>
-                                {isTimeUp ? (
-                                    <Text style={[styles.waitingText, { color: '#e50914' }]}>TIME IS UP!</Text>
-                                ) : (
-                                    <Text style={styles.waitingText}>Waiting for others...</Text>
-                                )}
-
-                                <Text style={styles.votedStatus}>{Object.keys(connection.votes || {}).length} / {connection.participants.length} Ready</Text>
-
-                                {(Object.keys(connection.votes || {}).length >= connection.participants.length || isTimeUp) && (
-                                    <TouchableOpacity style={styles.revealButton} onPress={handleReveal}>
-                                        <Text style={styles.revealButtonText}>REVEAL WINNER</Text>
-                                    </TouchableOpacity>
-                                )}
+                                <TouchableOpacity style={styles.revealButton} onPress={handleReveal}>
+                                    <Text style={styles.revealButtonText}>REVEAL WINNER</Text>
+                                </TouchableOpacity>
                             </View>
                         )}
                     </View>
@@ -442,6 +524,14 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                                 <Icon name="times" size={20} color="#ccc" />
                             </TouchableOpacity>
                         </View>
+
+                        <TextInput
+                            style={{ backgroundColor: '#252535', padding: 12, borderRadius: 10, color: '#fff', marginBottom: 15 }}
+                            placeholder="Type to search..."
+                            placeholderTextColor="#666"
+                            value={searchQuery}
+                            onChangeText={handleSearch}
+                        />
 
                         <Text style={styles.label}>Select Genre</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genreScroll}>
@@ -475,6 +565,24 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                                     <ActivityIndicator color="#e50914" style={{ marginTop: 20 }} />
                             }
                         />
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Instructions Modal */}
+            <Modal visible={showInstructions} animationType="fade" transparent>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { height: 'auto', padding: 30 }]}>
+                        <Text style={[styles.modalTitle, { textAlign: 'center', marginBottom: 15 }]}>How to Play</Text>
+                        <Text style={{ color: '#ccc', fontSize: 16, lineHeight: 24, marginBottom: 20 }}>
+                            1. <Text style={{ fontWeight: 'bold', color: '#fff' }}>Rate</Text> each movie 1-10 based on how much you want to watch it right now.{'\n'}
+                            2. <Text style={{ fontWeight: 'bold', color: '#fff' }}>Skip</Text> movies you've already seen.{'\n'}
+                            3. <Text style={{ fontWeight: 'bold', color: '#fff' }}>Search</Text> to instantly add and rate a specific movie you have in mind.{'\n'}
+                            4. Matches are found when everyone rates highly!
+                        </Text>
+                        <TouchableOpacity style={styles.submitButton} onPress={() => setShowInstructions(false)}>
+                            <Text style={styles.submitButtonText}>Let's Go!</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -514,7 +622,44 @@ const styles = StyleSheet.create({
     alreadyWatchedBtn: { backgroundColor: '#333', paddingVertical: 8, paddingHorizontal: 15, borderRadius: 20, marginBottom: 15, borderWidth: 1, borderColor: '#555' },
     alreadyWatchedText: { color: '#aaa', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase' },
 
-    footer: { padding: 20, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#0a0a1a' },
+    cavatarsContainer: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 10, backgroundColor: '#0a0a1a' },
+    cavatarWrapper: { alignItems: 'center', marginHorizontal: 8 },
+    cavatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#333' },
+    cavatarName: { color: '#666', fontSize: 10, marginTop: 4, width: 50, textAlign: 'center' },
+
+    singleCard: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 20,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10
+    },
+    singlePoster: { width: '100%', height: '100%' },
+    cardOverlay: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        padding: 20,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20
+    },
+    singleTitle: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 5 },
+    singleOverview: { color: '#ccc', fontSize: 14, marginBottom: 15 },
+    singleWatchedBtn: { alignSelf: 'center', marginBottom: 15, paddingVertical: 12, paddingHorizontal: 25, backgroundColor: 'rgba(255, 255, 255, 0.15)', borderRadius: 25, borderWidth: 1, borderColor: '#fff' },
+    singleWatchedText: { color: '#fff', textTransform: 'uppercase', fontSize: 13, letterSpacing: 1, fontWeight: 'bold' },
+
+    ratingRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
+    ratingCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#555' },
+    ratingNumber: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+
+    footer: { padding: 20, backgroundColor: '#0a0a1a' },
     submitButton: { backgroundColor: '#ff8c00', padding: 15, borderRadius: 10, alignItems: 'center' },
     submitButtonText: { color: '#000', fontWeight: 'bold', fontSize: 18 },
 

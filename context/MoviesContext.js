@@ -11,6 +11,7 @@ export const MoviesContext = createContext({
     movieLists: [],
     overallRatedMovies: [],
     recentlyWatched: [],
+    recentActivity: [],
     ratingMethod: '1-10',
     setRatingMethod: () => { },
     addList: () => { },
@@ -19,6 +20,7 @@ export const MoviesContext = createContext({
     addMovieToList: () => { },
     removeMovieFromList: () => { },
     addToRecentlyWatched: () => { },
+    addToRecentActivity: () => { },
     updateOverallRatings: () => { },
 });
 
@@ -30,6 +32,7 @@ export const MoviesProvider = ({ children }) => {
     ]);
     const [overallRatedMovies, setOverallRatedMovies] = useState([]);
     const [recentlyWatched, setRecentlyWatched] = useState([]);
+    const [recentActivity, setRecentActivity] = useState([]);
     const [ratingMethod, setRatingMethod] = useState('1-10');
 
     // Listen for Auth Changes to load data
@@ -108,6 +111,7 @@ export const MoviesProvider = ({ children }) => {
                     await fetchUserRatings(uid);
                 }
                 if (data.recentlyWatched) setRecentlyWatched(data.recentlyWatched);
+                if (data.recentActivity) setRecentActivity(data.recentActivity);
                 if (data.ratingMethod) setRatingMethod(data.ratingMethod);
             } else {
                 // Initialize default doc if not exists (migrating old users or fresh start)
@@ -115,6 +119,7 @@ export const MoviesProvider = ({ children }) => {
                     movieLists,
                     overallRatedMovies: [],
                     recentlyWatched: [],
+                    recentActivity: [],
                     ratingMethod: '1-10'
                 }, { merge: true });
             }
@@ -185,6 +190,15 @@ export const MoviesProvider = ({ children }) => {
         });
     };
 
+    const addToRecentActivity = async (movie) => {
+        setRecentActivity(prev => {
+            const filteredList = prev.filter(m => m.id !== movie.id);
+            const updatedList = [movie, ...filteredList].slice(0, 20); // Keep last 20 activities
+            saveData('recentActivity', updatedList);
+            return updatedList;
+        });
+    };
+
     const submitRating = async (movieId, ratingType, score, breakdown = null, movieMetadata = {}) => {
         if (!user) return;
 
@@ -197,6 +211,7 @@ export const MoviesProvider = ({ children }) => {
         else if (ratingType === '1-5') dbType = 'pizza';
         else if (ratingType === 'Percentage') dbType = 'percentage';
         else if (ratingType === 'Awards') dbType = 'awards';
+        else if (ratingType === 'Thumbs') dbType = 'thumbs'; // Add Thumbs normalization
 
         // 1. Optimistic UI Update (Local)
         updateOverallRatings(movieId, validScore, movieMetadata);
@@ -230,15 +245,20 @@ export const MoviesProvider = ({ children }) => {
                 classic: { count: 0, sum: 0, average: 0 },
                 pizza: { count: 0, sum: 0, average: 0 },
                 percentage: { count: 0, sum: 0, average: 0 },
-                awards: { count: 0, sum: 0, average: 0 }
+                awards: { count: 0, sum: 0, average: 0 },
+                thumbs: { count: 0, sum: 0, average: 0 } // Add thumbs stats
             };
 
             // Tally up
             snapshot.forEach(doc => {
                 const r = doc.data();
-                if (r.type && newStats[r.type]) {
-                    newStats[r.type].count += 1;
-                    newStats[r.type].sum += r.score;
+                // Normalize legacy/mixed types for counting
+                let t = r.type;
+                if (t === 'Thumbs') t = 'thumbs';
+
+                if (t && newStats[t]) {
+                    newStats[t].count += 1;
+                    newStats[t].sum += r.score;
                 }
             });
 
@@ -290,10 +310,25 @@ export const MoviesProvider = ({ children }) => {
         });
     };
 
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            if (!currentUser) {
+                // User logged out, clear all state
+                setMovieLists([]);
+                setOverallRatedMovies([]);
+                setRecentlyWatched([]);
+                setRecentActivity([]);
+                setRatingMethod('1-10');
+            }
+        });
+        return unsubscribe;
+    }, []);
+
     const value = useMemo(() => ({
         movieLists,
         overallRatedMovies,
         recentlyWatched,
+        recentActivity,
         ratingMethod,
         setRatingMethod: updateRatingMethod,
         submitRating,
@@ -303,8 +338,9 @@ export const MoviesProvider = ({ children }) => {
         addMovieToList,
         removeMovieFromList,
         addToRecentlyWatched,
+        addToRecentActivity,
         updateOverallRatings,
-    }), [movieLists, overallRatedMovies, recentlyWatched, ratingMethod]);
+    }), [movieLists, overallRatedMovies, recentlyWatched, recentActivity, ratingMethod]);
 
     return (
         <MoviesContext.Provider value={value}>

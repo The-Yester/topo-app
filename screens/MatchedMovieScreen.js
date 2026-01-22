@@ -56,7 +56,28 @@ const MatchedMovieScreen = () => {
             const userDoc = await getDoc(doc(db, "users", uid));
             if (userDoc.exists()) {
                 const data = userDoc.data();
-                setFollowing(data.following || []);
+                const rawFollowing = data.following || [];
+
+                // Hydrate friends with fresh data (Profile Photos might be updated)
+                const hydratedFriends = await Promise.all(rawFollowing.map(async (friend) => {
+                    try {
+                        const friendSnap = await getDoc(doc(db, "users", friend.uid));
+                        if (friendSnap.exists()) {
+                            const friendData = friendSnap.data();
+                            return {
+                                ...friend,
+                                profilePhoto: friendData.profilePhoto,
+                                username: friendData.username // Ensure latest username too
+                            };
+                        }
+                        return friend;
+                    } catch (e) {
+                        console.error("Error hydrating friend:", friend.uid, e);
+                        return friend;
+                    }
+                }));
+
+                setFollowing(hydratedFriends);
             }
         } catch (error) {
             console.error("Error fetching friends:", error);

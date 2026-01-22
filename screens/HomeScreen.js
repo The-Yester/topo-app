@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ScrollView, Dimensions, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { MoviesContext } from '../context/MoviesContext';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../firebaseConfig';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -11,7 +12,7 @@ import { TMDB_API_KEY } from '../utils/config';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const HomeScreen = () => {
-    const { getMoviesInList, recentlyWatched } = useContext(MoviesContext);
+    const { getMoviesInList, recentlyWatched, recentActivity } = useContext(MoviesContext);
     const navigation = useNavigation();
 
     const [userProfile, setUserProfile] = useState(null);
@@ -88,6 +89,59 @@ const HomeScreen = () => {
         loadInTheaters();
     }, []);
 
+    const renderRatingBadge = (item) => {
+        if (!item.userRating && item.userRating !== 0) return null;
+
+        const rating = parseFloat(item.userRating);
+        const method = item.ratingMethod;
+
+        let displayValue = "";
+        let iconName = "";
+        let iconColor = "";
+        let Component = null;
+
+        if (method === 'Percentage' || method === 'percentage') {
+            displayValue = `${rating.toFixed(0)}%`;
+            iconName = "percent";
+            iconColor = "#4CAF50";
+            Component = Icon;
+        } else if (method === '1-5' || method === 'Pizza' || method === 'pizza') {
+            displayValue = `${rating.toFixed(1)}`;
+            iconName = "pizza";
+            iconColor = "#FF5722";
+            Component = MaterialIcon;
+        } else if (method === 'Awards' || method === 'awards') {
+            displayValue = `${rating.toFixed(1)}`;
+            iconName = "trophy";
+            iconColor = "#FFD700";
+            Component = Icon;
+        } else if (method === 'Thumbs') {
+            displayValue = `${rating.toFixed(1)}`;
+            iconName = "thumb-up";
+            iconColor = "#4CAF50";
+            Component = MaterialIcon;
+        } else {
+            // Classic 1-10
+            displayValue = `${rating.toFixed(1)}`;
+            // Custom badge for 10
+            return (
+                <View style={styles.ratingBadge}>
+                    <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center', marginRight: 2 }}>
+                        <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#000' }}>10</Text>
+                    </View>
+                    <Text style={styles.ratingBadgeText}>{displayValue}</Text>
+                </View>
+            );
+        }
+
+        return (
+            <View style={styles.ratingBadge}>
+                {Component && <Component name={iconName} size={10} color={iconColor} style={{ marginRight: 2 }} />}
+                <Text style={styles.ratingBadgeText}>{displayValue}</Text>
+            </View>
+        );
+    };
+
     const renderMoviePoster = ({ item }) => {
         const imageUrl = item.poster_path
             ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
@@ -99,6 +153,7 @@ const HomeScreen = () => {
                 onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
             >
                 <Image source={{ uri: imageUrl }} style={styles.posterImage} />
+                {renderRatingBadge(item)}
             </TouchableOpacity>
         );
     };
@@ -232,14 +287,29 @@ const HomeScreen = () => {
 
                 {/* --- RECENT ACTIVITY --- */}
                 <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>Recent Activity</Text>
+                    <Text style={styles.sectionTitle}>Recently Rated</Text>
+                    <FlatList
+                        horizontal
+                        data={recentActivity}
+                        renderItem={renderMoviePoster}
+                        keyExtractor={(item) => `activity-${item.id}`}
+                        showsHorizontalScrollIndicator={false}
+                        ListEmptyComponent={<Text style={styles.emptyText}>No recent activity.</Text>}
+                    />
+                </View>
+
+                <View style={styles.separator} />
+
+                {/* --- RECENTLY WATCHED --- */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>Recently Watched</Text>
                     <FlatList
                         horizontal
                         data={recentlyWatched}
                         renderItem={renderMoviePoster}
-                        keyExtractor={(item) => `recent-${item.id}`}
+                        keyExtractor={(item) => `watched-${item.id}`}
                         showsHorizontalScrollIndicator={false}
-                        ListEmptyComponent={<Text style={styles.emptyText}>No recent activity.</Text>}
+                        ListEmptyComponent={<Text style={styles.emptyText}>No movies marked as watched.</Text>}
                     />
                 </View>
 
@@ -269,6 +339,24 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
+    ratingBadge: {
+        position: 'absolute',
+        top: 5,
+        right: 5,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)'
+    },
+    ratingBadgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: 'bold'
+    },
     container: {
         flex: 1,
         backgroundColor: '#f5f5f5',

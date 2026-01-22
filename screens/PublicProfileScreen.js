@@ -4,6 +4,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MoviesContext } from '../context/MoviesContext';
 
@@ -209,6 +211,59 @@ const PublicProfileScreen = () => {
         }
     };
 
+    const renderRatingBadge = (item) => {
+        if (!item.userRating && item.userRating !== 0) return null;
+
+        const rating = parseFloat(item.userRating);
+        const method = item.ratingMethod; // May need normalization if inconsistent casing
+
+        let displayValue = "";
+        let iconName = "";
+        let iconColor = "";
+        let Component = null;
+
+        if (method === 'Percentage' || method === 'percentage') {
+            displayValue = `${rating.toFixed(0)}%`;
+            iconName = "percent";
+            iconColor = "#4CAF50";
+            Component = Icon;
+        } else if (method === '1-5' || method === 'Pizza' || method === 'pizza') {
+            displayValue = `${rating.toFixed(1)}`;
+            iconName = "pizza";
+            iconColor = "#FF5722";
+            Component = MaterialIcon;
+        } else if (method === 'Awards' || method === 'awards') {
+            displayValue = `${rating.toFixed(1)}`;
+            iconName = "trophy";
+            iconColor = "#FFD700";
+            Component = Icon;
+        } else if (method === 'Thumbs') {
+            displayValue = `${rating.toFixed(1)}`;
+            iconName = "thumb-up";
+            iconColor = "#4CAF50";
+            Component = MaterialIcon;
+        } else {
+            // Classic 1-10
+            displayValue = `${rating.toFixed(1)}`;
+            // Custom badge for 10
+            return (
+                <View style={styles.ratingBadge}>
+                    <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center', marginRight: 2 }}>
+                        <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#000' }}>10</Text>
+                    </View>
+                    <Text style={styles.ratingBadgeText}>{displayValue}</Text>
+                </View>
+            );
+        }
+
+        return (
+            <View style={styles.ratingBadge}>
+                <Component name={iconName} size={10} color={iconColor} style={{ marginRight: 2 }} />
+                <Text style={styles.ratingBadgeText}>{displayValue}</Text>
+            </View>
+        );
+    };
+
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <View style={styles.header}>
@@ -243,6 +298,43 @@ const PublicProfileScreen = () => {
                                     {isFollowing ? "Following" : "Follow"}
                                 </Text>
                             </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* Rating Method Badge (Moved Here) */}
+                    <View style={styles.ratingBadgeContainerProfile}>
+                        <Text style={styles.ratingBadgeTitle}>User Rating Style</Text>
+                        {(!userData.ratingMethod || userData.ratingMethod === '1-5') && (
+                            <>
+                                <MaterialIcon name="pizza" size={40} color="#FF5722" />
+                                <Text style={styles.ratingBadgeTextProfile}>(1-5)</Text>
+                            </>
+                        )}
+                        {(userData.ratingMethod === '1-10' || userData.ratingMethod === 'Classic') && (
+                            <>
+                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center', marginBottom: 2 }}>
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#000' }}>10</Text>
+                                </View>
+                                <Text style={styles.ratingBadgeTextProfile}>(1-10)</Text>
+                            </>
+                        )}
+                        {userData.ratingMethod === 'Percentage' && (
+                            <>
+                                <Icon name="percent" size={36} color="#4CAF50" />
+                                <Text style={styles.ratingBadgeTextProfile}>(%)</Text>
+                            </>
+                        )}
+                        {userData.ratingMethod === 'Awards' && (
+                            <>
+                                <Icon name="trophy" size={40} color="#FFD700" />
+                                <Text style={styles.ratingBadgeTextProfile}>(Awards)</Text>
+                            </>
+                        )}
+                        {userData.ratingMethod === 'Thumbs' && (
+                            <>
+                                <MaterialIcon name="thumb-up" size={40} color="#4CAF50" />
+                                <Text style={styles.ratingBadgeTextProfile}>(E&R Variation)</Text>
+                            </>
                         )}
                     </View>
                 </View>
@@ -361,14 +453,14 @@ const PublicProfileScreen = () => {
 
                 <View style={styles.separator} />
 
-                {/* Recently Watched */}
+                {/* Recent Activity Section (NEW) */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Recently Watched</Text>
-                    {recentlyWatched.length > 0 ? (
+                    <Text style={styles.sectionTitle}>Recently Rated</Text>
+                    {(userData.recentActivity && userData.recentActivity.length > 0) ? (
                         <FlatList
                             horizontal
-                            data={recentlyWatched}
-                            keyExtractor={item => `recent-${item.id}`}
+                            data={userData.recentActivity}
+                            keyExtractor={(item, index) => `activity-${item.id}-${index}`}
                             showsHorizontalScrollIndicator={false}
                             renderItem={({ item }) => (
                                 <TouchableOpacity
@@ -379,6 +471,34 @@ const PublicProfileScreen = () => {
                                         source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
                                         style={styles.posterImage}
                                     />
+                                    {renderRatingBadge(item)}
+                                </TouchableOpacity>
+                            )}
+                        />
+                    ) : (
+                        <Text style={styles.emptyText}>No recent interactions.</Text>
+                    )}
+                </View>
+
+                {/* Recently Watched */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Recently Watched</Text>
+                    {recentlyWatched.length > 0 ? (
+                        <FlatList
+                            horizontal
+                            data={recentlyWatched}
+                            keyExtractor={(item, index) => `recent-${item.id}-${index}`}
+                            showsHorizontalScrollIndicator={false}
+                            renderItem={({ item }) => (
+                                <TouchableOpacity
+                                    style={styles.posterItem}
+                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                                >
+                                    <Image
+                                        source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
+                                        style={styles.posterImage}
+                                    />
+                                    {renderRatingBadge(item)}
                                 </TouchableOpacity>
                             )}
                         />
@@ -447,9 +567,28 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         color: '#ff8c00',
-        fontSize: 20,
+        fontSize: 18, // Slightly smaller to fit
         fontWeight: 'bold',
         fontFamily: 'Trebuchet MS',
+    },
+    ratingBadgeContainerProfile: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 90,
+        marginLeft: 10
+    },
+    ratingBadgeTitle: {
+        color: '#ff8c00',
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginBottom: 6,
+        textAlign: 'center'
+    },
+    ratingBadgeTextProfile: {
+        color: '#888',
+        fontSize: 12,
+        marginTop: 4,
+        fontWeight: 'bold'
     },
     scrollContent: {
         padding: 0 // Reset padding for full width sections? No, let's keep sections padded individually or use container padding? 
@@ -659,6 +798,24 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         fontFamily: 'Trebuchet MS',
         textAlign: 'center'
+    },
+    ratingBadge: {
+        position: 'absolute',
+        top: 5,
+        right: 5,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)'
+    },
+    ratingBadgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: 'bold'
     }
 
 });
