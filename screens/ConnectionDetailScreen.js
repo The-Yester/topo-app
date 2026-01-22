@@ -4,6 +4,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { db, auth } from '../firebaseConfig';
 import { doc, onSnapshot, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
+import { sendPushNotification, getUserPushToken, broadcastToGroup } from '../services/NotificationService';
 import { TMDB_API_KEY } from '../utils/config';
 
 const ConnectionDetailScreen = ({ route, navigation }) => {
@@ -265,6 +266,17 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
         }
     };
 
+    const handleNudge = async () => {
+        if (!connection.participants) return;
+        Alert.alert("Sent", "Nudged group members to vote!");
+        await broadcastToGroup(
+            connection.participants,
+            "Vote Reminder ⏰",
+            `Keep voting in "${connection.name}"! Time is ticking.`,
+            { type: 'connection', connectionId }
+        );
+    };
+
     // --- Voting Logic ---
     const handleRecalculateMatches = () => {
         Alert.alert("Refresh", "Re-checking watchlists...");
@@ -273,7 +285,21 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
 
 
 
-    const handleReveal = () => {
+    const handleReveal = async () => {
+        // Broadcast "Time's Up / Results Ready" if creator or first revealer?
+        // Let's just do it every time button is pressed? No, that's spammy.
+        // Maybe check if status is already "revealed"? If in voting, switch to revealed (if we tracked that status strictly).
+        // For prototype, sending it on tap is fine, user won't tap 100 times. Or we assume this is the "End" event.
+
+        if (connection.participants) {
+            await broadcastToGroup(
+                connection.participants,
+                "Results Ready! 🏆",
+                `The results for "${connection.name}" are in. See what won!`,
+                { type: 'connection', connectionId }
+            );
+        }
+
         navigation.navigate('RevealScreen', { connectionId });
     };
 
@@ -391,8 +417,8 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{connection.name}</Text>
                 {timeLeft ? <Text style={styles.timeWindow}>{timeLeft}</Text> : null}
-                <TouchableOpacity onPress={() => navigation.navigate("MessageBoard")} >
-                    {/* Shortcut to chat? Maybe later */}
+                <TouchableOpacity onPress={handleNudge} style={{ marginLeft: 10 }}>
+                    <MaterialIcon name="bell-ring" size={20} color="#ff8c00" />
                 </TouchableOpacity>
             </View>
 

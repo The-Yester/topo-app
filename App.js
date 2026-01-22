@@ -16,6 +16,10 @@ import MessageBoard from './screens/MessageBoard';
 import ProfileScreen from './screens/ProfileScreen';
 import ProfileSettings from './screens/ProfileSettings';
 import 'react-native-get-random-values';
+import * as Notifications from 'expo-notifications';
+import { useRef, useEffect, useState } from 'react';
+import { registerForPushNotificationsAsync } from './services/NotificationService';
+
 import GenreMovieScreen from './screens/GenreMovieScreen';
 import NowPlayingScreen from './screens/NowPlayingScreen';
 import NewStreamingScreen from './screens/NewStreamingScreen';
@@ -86,6 +90,28 @@ function BottomTabs() {
 }
 
 function AppNavigator() {
+    const [notification, setNotification] = useState(false);
+    const notificationListener = useRef();
+    const responseListener = useRef();
+
+    useEffect(() => {
+        // Listeners for incoming notifications
+        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+            setNotification(notification);
+        });
+
+        // Listener for user tapping on notification
+        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+            console.log(response);
+            // In a real app, navigate based on response.notification.request.content.data
+        });
+
+        return () => {
+            Notifications.removeNotificationSubscription(notificationListener.current);
+            Notifications.removeNotificationSubscription(responseListener.current);
+        };
+    }, []);
+
     return (
         <MoviesProvider>
             <NavigationContainer>

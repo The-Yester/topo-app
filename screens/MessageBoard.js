@@ -32,6 +32,7 @@ import {
     arrayRemove,
     deleteDoc
 } from 'firebase/firestore';
+import { sendPushNotification, getUserPushToken } from '../services/NotificationService';
 
 const MessageBoardScreen = () => {
     const navigation = useNavigation();
@@ -42,6 +43,7 @@ const MessageBoardScreen = () => {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [userProfile, setUserProfile] = useState(null);
+    const [replyMetadata, setReplyMetadata] = useState(null); // { type: 'reply'|'quote', post: postObject }
 
     // 1. Fetch Current User Profile for Posting (Avatar/Name)
     useEffect(() => {
@@ -99,7 +101,31 @@ const MessageBoardScreen = () => {
                 likedBy: [], // Track who liked
                 comments: 0
             });
+
+            // Check for Notification (Reply/Quote)
+            if (replyMetadata && replyMetadata.post && replyMetadata.post.userId !== auth.currentUser.uid) {
+                const targetPost = replyMetadata.post;
+                const token = await getUserPushToken(targetPost.userId);
+
+                if (token) {
+                    const myName = userProfile?.username || "Someone";
+                    let title = "New Notification 🔔";
+                    let body = "";
+
+                    if (replyMetadata.type === 'reply') {
+                        title = "New Reply 💬";
+                        body = `${myName} replied to you: "${newMessage.substring(0, 50)}..."`;
+                    } else if (replyMetadata.type === 'quote') {
+                        title = "New Quote 🔁";
+                        body = `${myName} quoted your post.`;
+                    }
+
+                    await sendPushNotification(token, title, body, { type: 'post', postId: targetPost.id });
+                }
+            }
+
             setNewMessage('');
+            setReplyMetadata(null); // Reset
         } catch (error) {
             console.error("Error adding post:", error);
             Alert.alert("Error", "Could not post message.");
@@ -125,6 +151,25 @@ const MessageBoardScreen = () => {
                     likes: (post.likes || 0) + 1,
                     likedBy: arrayUnion(uid)
                 });
+
+                // Notify Author (if not self)
+                if (post.userId !== uid) {
+                    const token = await getUserPushToken(post.userId);
+                    if (token) {
+                        const likerName = auth.currentUser.displayName || auth.currentUser.email.split('@')[0]; // simple fallback
+                        // Ideally we have profile loaded, but auth object has some info or we can fetch.
+                        // Assuming basic info for now. 
+                        // Actually userProfile state exists in this component!
+                        const myName = userProfile?.username || "Someone";
+
+                        await sendPushNotification(
+                            token,
+                            "New Like ❤️",
+                            `${myName} liked your post: "${post.text.substring(0, 30)}..."`,
+                            { type: 'post', postId: post.id }
+                        );
+                    }
+                }
             }
         } catch (e) {
             console.error("Like error:", e);
@@ -143,11 +188,12 @@ const MessageBoardScreen = () => {
 
     const handleQuote = (post) => {
         setNewMessage(`RT @${post.username}: "${post.text}" `);
-        // Ideally focus input here if ref was available, but state update works for prefill
+        setReplyMetadata({ type: 'quote', post: post });
     };
 
     const handleReply = (post) => {
         setNewMessage(`@${post.username} `);
+        setReplyMetadata({ type: 'reply', post: post });
     };
 
     const handleDeletePost = async (post) => {
@@ -275,7 +321,10 @@ const MessageBoardScreen = () => {
                         placeholderTextColor="#657786"
                         multiline
                         value={newMessage}
-                        onChangeText={setNewMessage}
+                        onChangeText={(text) => {
+                            setNewMessage(text);
+                            if (text.length === 0) setReplyMetadata(null); // Clear context if cleared
+                        }}
                         maxLength={280}
                     />
                     <View style={styles.inputActions}>

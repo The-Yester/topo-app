@@ -5,6 +5,7 @@ import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firest
 import { db, auth } from '../firebaseConfig';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { sendPushNotification, getUserPushToken } from '../services/NotificationService';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MoviesContext } from '../context/MoviesContext';
@@ -106,6 +107,17 @@ const PublicProfileScreen = () => {
                 await updateDoc(currentUserRef, { following: arrayUnion(targetUserInfo) });
                 await updateDoc(targetUserRef, { followers: arrayUnion(myselfInfo) });
                 setIsFollowing(true);
+
+                // Send Notification
+                const token = await getUserPushToken(userId);
+                if (token) {
+                    await sendPushNotification(
+                        token,
+                        "New Follower! 🌟",
+                        `${myselfInfo.username} started following you.`,
+                        { type: 'profile', userId: currentUserId }
+                    );
+                }
             }
         } catch (error) {
             console.error("Error toggling follow:", error);

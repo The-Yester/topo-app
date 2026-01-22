@@ -5,6 +5,7 @@ import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../firebaseConfig';
 import { collection, query, where, onSnapshot, doc, getDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { sendPushNotification, getUserPushToken } from '../services/NotificationService';
 
 const MatchedMovieScreen = () => {
     const navigation = useNavigation();
@@ -132,11 +133,23 @@ const MatchedMovieScreen = () => {
                 createdBy: user.uid
             });
 
-            setIsCreateModalVisible(false);
             setNewConnectionName('');
             setDuration(3);
             setSelectedFriends([]);
             Alert.alert("Success", "Group started! You have " + duration + " days to vote.");
+
+            // Send Notifications to Invitees
+            for (const friend of selectedFriends) {
+                const token = await getUserPushToken(friend.uid);
+                if (token) {
+                    await sendPushNotification(
+                        token,
+                        "New Match Group! 🎬",
+                        `${myProfile.username} added you to "${newConnectionName.trim()}". Time to vote!`,
+                        { type: 'connection', connectionId: 'new' } // ID not easily available from addDoc result immediately unless we await ref.id
+                    );
+                }
+            }
 
         } catch (error) {
             console.error("Error creating connection:", error);
