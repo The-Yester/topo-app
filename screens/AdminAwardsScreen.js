@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, TextInput, Image, FlatList, ActivityIndicator, Alert, StatusBar, Platform, ActionSheetIOS, Modal } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { useNavigation } from '@react-navigation/native';
-import { fetchActiveAwardsEvents, addNomineeToCategory, removeNomineeFromCategory, addCategoryToEvent, removeCategoryFromEvent, markCategoryWinner, updateEvent, deleteEvent, updateNominee, reorderCategories } from '../api/AwardsService';
+import { fetchActiveAwardsEvents, addNomineeToCategory, removeNomineeFromCategory, addCategoryToEvent, removeCategoryFromEvent, markCategoryWinner, updateEvent, deleteEvent, updateNominee, reorderCategories, createNewEvent, reorderEvents } from '../api/AwardsService';
 import { searchMovies } from '../api/MovieService';
 
 // Standard Categories to pick from
@@ -47,8 +47,20 @@ const AdminAwardsScreen = () => {
 
     const [query, setQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+
     const [searching, setSearching] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    // Create Event State
+    const [createEventVisible, setCreateEventVisible] = useState(false);
+    const [newEventName, setNewEventName] = useState('');
+    const [newEventDate, setNewEventDate] = useState('');
+
+
+
+    // Reorder Events State
+    const [reorderEventsVisible, setReorderEventsVisible] = useState(false);
+    const [tempEvents, setTempEvents] = useState([]);
 
     useEffect(() => {
         loadEvents();
@@ -96,6 +108,57 @@ const AdminAwardsScreen = () => {
             setSelectedEvent(updatedEvent);
         } catch (e) {
             Alert.alert("Error", "Failed to update lock status");
+        }
+    };
+
+    const handleCreateEvent = async () => {
+        if (!newEventName.trim() || !newEventDate.trim()) {
+            Alert.alert("Missing Info", "Name and Date are required.");
+            return;
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(newEventDate)) {
+            Alert.alert("Invalid Date", "Use YYYY-MM-DD");
+            return;
+        }
+
+        try {
+            const newEvent = await createNewEvent(newEventName.trim(), newEventDate.trim());
+            setEvents([...events, newEvent]);
+            setSelectedEvent(newEvent);
+            setCreateEventVisible(false);
+            setNewEventName('');
+            setNewEventDate('');
+            Alert.alert("Success", "Event Created!");
+        } catch (e) {
+            Alert.alert("Error", e.message);
+        }
+    };
+
+    const openReorderEventsModal = () => {
+        setTempEvents([...events]);
+        setReorderEventsVisible(true);
+    };
+
+    const moveEvent = (index, direction) => {
+        const newEvents = [...tempEvents];
+        const targetIndex = index + direction;
+        if (targetIndex < 0 || targetIndex >= newEvents.length) return;
+
+        // Swap
+        const temp = newEvents[index];
+        newEvents[index] = newEvents[targetIndex];
+        newEvents[targetIndex] = temp;
+        setTempEvents(newEvents);
+    };
+
+    const saveEventOrder = async () => {
+        try {
+            await reorderEvents(tempEvents);
+            setEvents(tempEvents);
+            setReorderEventsVisible(false);
+            Alert.alert("Success", "Event order saved!");
+        } catch (e) {
+            Alert.alert("Error", "Failed to reorder events");
         }
     };
 
@@ -265,12 +328,18 @@ const AdminAwardsScreen = () => {
         try {
             if (isEditingNominee) {
                 // EDIT EXISTING
-                await updateNominee(selectedEvent.id, selectedCategory.id, pendingMovie.tmdbId, { name: finalName });
+                // Identify by unique ID if available, else fallback to tmdbId
+                const targetId = pendingMovie.id || pendingMovie.tmdbId;
+
+                await updateNominee(selectedEvent.id, selectedCategory.id, targetId, { name: finalName });
 
                 // Local Update
                 const updatedCat = {
                     ...selectedCategory,
-                    nominees: selectedCategory.nominees.map(n => n.tmdbId === pendingMovie.tmdbId ? { ...n, name: finalName } : n)
+                    nominees: selectedCategory.nominees.map(n => {
+                        const isMatch = n.id ? n.id === targetId : n.tmdbId === targetId;
+                        return isMatch ? { ...n, name: finalName } : n;
+                    })
                 };
                 const updatedEvent = {
                     ...selectedEvent,
@@ -283,7 +352,11 @@ const AdminAwardsScreen = () => {
                 Alert.alert("Success", "Nominee updated.");
             } else {
                 // ADD NEW
+                // Generate a unique ID to allow duplicates of same movie
+                const uniqueId = `${pendingMovie.id}_${Date.now()}`;
+
                 const nominee = {
+                    id: uniqueId,
                     tmdbId: pendingMovie.id,
                     title: pendingMovie.title,
                     name: finalName,
@@ -369,7 +442,7 @@ const AdminAwardsScreen = () => {
 
                             const updatedCat = {
                                 ...selectedCategory,
-                                nominees: selectedCategory.nominees.filter(n => n.tmdbId !== nomineeId)
+                                nominees: selectedCategory.nominees.filter(n => (n.id ? n.id !== nomineeId : n.tmdbId !== nomineeId))
                             };
                             const updatedEvent = {
                                 ...selectedEvent,
@@ -392,14 +465,18 @@ const AdminAwardsScreen = () => {
         if (!selectedEvent || !selectedCategory) return;
 
         // Check if already is winner to toggle off (optional, or just re-set)
-        const isCurrentWinner = selectedCategory.winnerTmdbId === nomineeId;
+        // Check new winnerId first, fallback to winnerTmdbId
+        const isCurrentWinner = selectedCategory.winnerId
+            ? selectedCategory.winnerId === nomineeId
+            : selectedCategory.winnerTmdbId === nomineeId;
+
         const newWinnerId = isCurrentWinner ? null : nomineeId;
 
         try {
             await markCategoryWinner(selectedEvent.id, selectedCategory.id, newWinnerId);
 
             // Local update
-            const updatedCat = { ...selectedCategory, winnerTmdbId: newWinnerId };
+            const updatedCat = { ...selectedCategory, winnerId: newWinnerId };
             const updatedEvent = {
                 ...selectedEvent,
                 categories: selectedEvent.categories.map(c => c.id === selectedCategory.id ? updatedCat : c)
@@ -416,7 +493,14 @@ const AdminAwardsScreen = () => {
     };
 
     const renderNominee = ({ item }) => {
-        const isWinner = selectedCategory?.winnerTmdbId === item.tmdbId;
+        // Winner Check: prefer winnerId, fallback to tmdbId
+        const isWinner = selectedCategory?.winnerId
+            ? selectedCategory.winnerId === item.id
+            : selectedCategory?.winnerTmdbId === item.tmdbId;
+
+        // Identifier for actions: use unique ID if available, else tmdbId
+        const identifier = item.id || item.tmdbId;
+
         return (
             <View style={[styles.nomineeItem, isWinner && { borderColor: '#FFD700', borderWidth: 2, backgroundColor: '#2a2a00' }]}>
                 <Image source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }} style={styles.nomineeThumb} />
@@ -432,11 +516,11 @@ const AdminAwardsScreen = () => {
                 </TouchableOpacity>
 
                 {/* Crown Button */}
-                <TouchableOpacity onPress={() => handleToggleWinner(item.tmdbId)} style={{ padding: 10, marginRight: 5 }}>
+                <TouchableOpacity onPress={() => handleToggleWinner(identifier)} style={{ padding: 10, marginRight: 5 }}>
                     <Icon name="trophy" size={20} color={isWinner ? "#FFD700" : "#555"} />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => handleRemoveNominee(item.tmdbId)} style={styles.deleteBtn}>
+                <TouchableOpacity onPress={() => handleRemoveNominee(identifier)} style={styles.deleteBtn}>
                     <Icon name="trash" size={20} color="red" />
                 </TouchableOpacity>
             </View>
@@ -505,13 +589,28 @@ const AdminAwardsScreen = () => {
                 {/* 1. Event Selector & Settings */}
                 <View style={styles.selectorRow}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.label}>Event:</Text>
+                        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                            <Text style={styles.label}>Event:</Text>
+                            <TouchableOpacity onPress={openReorderEventsModal}>
+                                <Text style={{ color: '#888', fontSize: 10, fontWeight: 'bold' }}>REORDER</Text>
+                            </TouchableOpacity>
+                        </View>
                         <TouchableOpacity onPress={() => setShowSettings(!showSettings)}>
                             <Icon name="cog" size={20} color={showSettings ? "#e50914" : "#888"} />
                         </TouchableOpacity>
                     </View>
 
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
+                        {/* CREATE BUTTON */}
+                        <TouchableOpacity
+                            style={[styles.chip, { backgroundColor: '#222', borderColor: '#444', borderWidth: 1 }]}
+                            onPress={() => setCreateEventVisible(true)}
+                        >
+                            <Text style={[styles.chipText, { color: '#00E676', fontWeight: 'bold' }]}>
+                                + NEW
+                            </Text>
+                        </TouchableOpacity>
+
                         {events.map(ev => (
                             <TouchableOpacity
                                 key={ev.id}
@@ -667,7 +766,7 @@ const AdminAwardsScreen = () => {
                             <FlatList
                                 data={selectedCategory.nominees || []}
                                 renderItem={renderNominee}
-                                keyExtractor={item => item.tmdbId.toString()}
+                                keyExtractor={item => item.id || item.tmdbId.toString()}
                                 style={styles.list}
                                 ListEmptyComponent={<Text style={styles.emptyText}>No nominees yet.</Text>}
                             />
@@ -784,6 +883,105 @@ const AdminAwardsScreen = () => {
                 </View>
             </Modal>
 
+
+            <Modal
+                visible={createEventVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setCreateEventVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Create New Event</Text>
+
+                        <Text style={{ color: '#ccc', marginBottom: 5 }}>Event Name:</Text>
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="e.g. 2027 Oscars"
+                            placeholderTextColor="#555"
+                            value={newEventName}
+                            onChangeText={setNewEventName}
+                        />
+
+                        <Text style={{ color: '#ccc', marginBottom: 5 }}>Date (YYYY-MM-DD):</Text>
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="e.g. 2027-02-28"
+                            placeholderTextColor="#555"
+                            value={newEventDate}
+                            onChangeText={setNewEventDate}
+                        />
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 15 }}>
+                            <TouchableOpacity
+                                onPress={() => setCreateEventVisible(false)}
+                                style={{ padding: 10 }}
+                            >
+                                <Text style={{ color: '#888' }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={handleCreateEvent}
+                                style={{ backgroundColor: '#e50914', padding: 10, borderRadius: 5 }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Create Event</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+
+
+            {/* REORDER EVENTS MODAL */}
+            <Modal
+                visible={reorderEventsVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setReorderEventsVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { height: '80%' }]}>
+                        <Text style={styles.modalTitle}>Reorder Events</Text>
+                        <Text style={{ color: '#666', marginBottom: 15, fontSize: 12 }}>Use arrows to move events up or down.</Text>
+
+                        <FlatList
+                            data={tempEvents}
+                            keyExtractor={item => item.id}
+                            renderItem={({ item, index }) => (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderBottomWidth: 1, borderBottomColor: '#333', justifyContent: 'space-between' }}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ color: '#fff' }}>{item.name}</Text>
+                                        <Text style={{ color: '#555', fontSize: 10 }}>{item.date?.seconds ? new Date(item.date.seconds * 1000).getFullYear() : ''}</Text>
+                                    </View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <TouchableOpacity onPress={() => moveEvent(index, -1)} style={{ padding: 10 }} disabled={index === 0}>
+                                            <Icon name="arrow-up" size={18} color={index === 0 ? "#333" : "#fff"} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => moveEvent(index, 1)} style={{ padding: 10 }} disabled={index === tempEvents.length - 1}>
+                                            <Icon name="arrow-down" size={18} color={index === tempEvents.length - 1 ? "#333" : "#fff"} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
+                        />
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 15 }}>
+                            <TouchableOpacity
+                                onPress={() => setReorderEventsVisible(false)}
+                                style={{ padding: 10 }}
+                            >
+                                <Text style={{ color: '#888' }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={saveEventOrder}
+                                style={{ backgroundColor: '#e50914', padding: 10, borderRadius: 5 }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Save Order</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };

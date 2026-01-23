@@ -292,12 +292,13 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
         // For prototype, sending it on tap is fine, user won't tap 100 times. Or we assume this is the "End" event.
 
         if (connection.participants) {
-            await broadcastToGroup(
+            // Fire and forget notifications so we don't block the UI
+            broadcastToGroup(
                 connection.participants,
                 "Results Ready! 🏆",
                 `The results for "${connection.name}" are in. See what won!`,
                 { type: 'connection', connectionId }
-            );
+            ).catch(err => console.error("Failed to broadcast results:", err));
         }
 
         navigation.navigate('RevealScreen', { connectionId });

@@ -1,6 +1,7 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { db, auth } from '../firebaseConfig';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 
@@ -41,10 +42,13 @@ export async function registerForPushNotificationsAsync() {
         }
 
         try {
-            const projectId = "165b4588-e9f0-4665-9831-2947116a81be"; // Explicitly pass Project ID (Ryest Expo) or handle via Constants if configured
-            // Best practice: use Constants.expoConfig.extra.eas.projectId but hardcoding temporarily or letting it infer is ok for dev
-            // Actually, let's try infer first, if fails we might need ID.
-            token = (await Notifications.getExpoPushTokenAsync()).data;
+            // Use Project ID from app.json (baa2a43e-a568-4f77-96d3-23750b05d5bf)
+            // Or ideally Constants.expoConfig.extra.eas.projectId
+            const projectId = Constants?.expoConfig?.extra?.eas?.projectId || "baa2a43e-a568-4f77-96d3-23750b05d5bf";
+
+            token = (await Notifications.getExpoPushTokenAsync({
+                projectId: projectId
+            })).data;
             console.log("Push Token:", token);
         } catch (e) {
             console.error("Error getting Expo Push Token:", e);
@@ -72,12 +76,18 @@ export async function registerForPushNotificationsAsync() {
 
 // Helper: Broadcast to Group
 export async function broadcastToGroup(uids, title, body, data) {
-    for (const uid of uids) {
-        if (uid === auth.currentUser?.uid) continue; // Don't notify self
+    const promises = uids.map(async (uid) => {
+        if (uid === auth.currentUser?.uid) return; // Don't notify self
         const token = await getUserPushToken(uid);
         if (token) {
             await sendPushNotification(token, title, body, data);
         }
+    });
+
+    try {
+        await Promise.all(promises);
+    } catch (error) {
+        console.error("Error broadcasting to group:", error);
     }
 }
 
@@ -106,7 +116,7 @@ export async function sendPushNotification(targetExpoPushToken, title, body, dat
     }
 
     // Check if it's a valid Expo token
-    if (!Notifications.isDevicePushToken(targetExpoPushToken) && !targetExpoPushToken.startsWith('ExponentPushToken')) {
+    if (!targetExpoPushToken.startsWith('ExponentPushToken')) {
         console.warn("Invalid Expo Push Token:", targetExpoPushToken);
         return;
     }

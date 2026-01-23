@@ -358,11 +358,14 @@ const AwardsHubScreen = () => {
 
                                     const isAnalyticalPick = analyticalPick && analyticalPick.tmdbId === nominee.tmdbId;
                                     const isMyLockedPick = myPickId === nominee.tmdbId;
-                                    const isActualWinner = actualWinnerId === nominee.tmdbId;
+                                    const isActualWinner = actualWinnerId === nominee.tmdbId; // Winner stored as TMDB ID or Unique? We switched to WinnerID. Check below.
+
+                                    // Identifier
+                                    const identifier = nominee.id || nominee.tmdbId;
 
                                     return (
                                         <TouchableOpacity
-                                            key={nominee.tmdbId}
+                                            key={identifier}
                                             style={[
                                                 styles.nomineeCard,
                                                 isMyLockedPick && styles.lockedCard,

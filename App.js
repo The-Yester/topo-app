@@ -78,7 +78,10 @@ function BottomTabs() {
             <Tab.Screen
                 name="Message Board"
                 component={MessageBoard}
-                options={{ tabBarIcon: ({ color, size }) => <Icon name="comments" color={color} size={size} /> }}
+                options={{
+                    tabBarLabel: 'Reelz',
+                    tabBarIcon: ({ color, size }) => <Icon name="comments" color={color} size={size} />
+                }}
             />
             <Tab.Screen
                 name="Search"
@@ -105,6 +108,9 @@ function AppNavigator() {
             console.log(response);
             // In a real app, navigate based on response.notification.request.content.data
         });
+
+        // Request permissions and get token on app launch
+        registerForPushNotificationsAsync();
 
         return () => {
             Notifications.removeNotificationSubscription(notificationListener.current);
