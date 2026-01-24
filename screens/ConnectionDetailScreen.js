@@ -23,6 +23,7 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
     // Single Card Logic State
     const [activeMovies, setActiveMovies] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const popularPage = useRef(1); // Pagination for refills
 
     const [showInstructions, setShowInstructions] = useState(false);
 
