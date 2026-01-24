@@ -139,13 +139,27 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                 // Initialize Active Movies (Filter out what I've voted on)
                 const myVotes = data.votes?.[currentUser.uid] || {};
                 const mMovies = data.matchedMovies || [];
-
-                // We keep all movies in activeMovies but start index at first unvoted
-                // Actually, cleaner to just keeping the array stable and skipping index?
-                // Or filtering? Filtering is safer so they don't reappear.
                 const unvoted = mMovies.filter(m => !myVotes[m.id]);
                 setActiveMovies(unvoted);
-                setCurrentIndex(0); // Always start at 0 of the unvoted list
+                setCurrentIndex(0);
+
+                // Hydrate Participants (Fresh Data)
+                if (data.participants && data.participants.length > 0) {
+                    Promise.all(data.participants.map(async (uid) => {
+                        try {
+                            const userSnap = await getDoc(doc(db, "users", uid));
+                            if (userSnap.exists()) {
+                                return { uid, ...userSnap.data() };
+                            }
+                            return { uid, username: 'Unknown' };
+                        } catch (e) {
+                            console.error("Error fetching participant:", uid, e);
+                            return { uid, username: 'Unknown' };
+                        }
+                    })).then(freshParticipants => {
+                        setConnection(prev => ({ ...prev, participantDetails: freshParticipants }));
+                    });
+                }
 
             } else {
                 Alert.alert("Error", "Connection not found.");

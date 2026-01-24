@@ -16,11 +16,18 @@ const MatchedMovieScreen = () => {
     // Create Modal State
     const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
     const [newConnectionName, setNewConnectionName] = useState('');
-    const [timeWindow, setTimeWindow] = useState('');
     const [following, setFollowing] = useState([]); // User's friends
     const [selectedFriends, setSelectedFriends] = useState([]);
     const [isCreating, setIsCreating] = useState(false);
-    const [duration, setDuration] = useState(3);
+    const [duration, setDuration] = useState(1440); // Default 1 day (in minutes)
+
+    const DURATION_OPTIONS = [
+        { label: '30m', value: 30 },
+        { label: '4h', value: 240 },
+        { label: '1d', value: 1440 },
+        { label: '3d', value: 4320 },
+        { label: '7d', value: 10080 }
+    ];
 
     useEffect(() => {
         const currentUser = auth.currentUser;
@@ -59,16 +66,26 @@ const MatchedMovieScreen = () => {
                 const data = userDoc.data();
                 const rawFollowing = data.following || [];
 
+                // Deduplicate rawFollowing by UID before hydration
+                const uniqueFollowing = [];
+                const seenUids = new Set();
+                for (const f of rawFollowing) {
+                    if (!seenUids.has(f.uid)) {
+                        seenUids.add(f.uid);
+                        uniqueFollowing.push(f);
+                    }
+                }
+
                 // Hydrate friends with fresh data (Profile Photos might be updated)
-                const hydratedFriends = await Promise.all(rawFollowing.map(async (friend) => {
+                const hydratedFriends = await Promise.all(uniqueFollowing.map(async (friend) => {
                     try {
                         const friendSnap = await getDoc(doc(db, "users", friend.uid));
                         if (friendSnap.exists()) {
                             const friendData = friendSnap.data();
                             return {
                                 ...friend,
-                                profilePhoto: friendData.profilePhoto,
-                                username: friendData.username // Ensure latest username too
+                                profilePhoto: friendData.profilePhoto || null, // Firestore doesn't accept undefined
+                                username: friendData.username || "Unknown"
                             };
                         }
                         return friend;
@@ -98,7 +115,6 @@ const MatchedMovieScreen = () => {
             Alert.alert("Missing Name", "Please give your group a name (e.g. 'Date Night')");
             return;
         }
-        // Duration is always set by default state
 
         if (selectedFriends.length === 0) {
             Alert.alert("No Friends", "Please select at least one friend to match with.");
@@ -120,11 +136,11 @@ const MatchedMovieScreen = () => {
 
             // Calculate Deadline
             const deadlineDate = new Date();
-            deadlineDate.setDate(deadlineDate.getDate() + duration);
+            deadlineDate.setMinutes(deadlineDate.getMinutes() + duration);
 
             await addDoc(collection(db, "connections"), {
                 name: newConnectionName.trim(),
-                duration: duration,
+                duration: duration, // Storing in minutes now
                 deadline: deadlineDate, // Firestore will convert Date to Timestamp
                 participants: participantUIDs,
                 participantDetails: participantDetails,
@@ -134,9 +150,9 @@ const MatchedMovieScreen = () => {
             });
 
             setNewConnectionName('');
-            setDuration(3);
+            setDuration(1440); // Reset to 1 day
             setSelectedFriends([]);
-            Alert.alert("Success", "Group started! You have " + duration + " days to vote.");
+            Alert.alert("Success", "Group started! Vote before time runs out.");
 
             // Send Notifications to Invitees
             for (const friend of selectedFriends) {
@@ -146,7 +162,7 @@ const MatchedMovieScreen = () => {
                         token,
                         "New Match Group! 🎬",
                         `${myProfile.username} added you to "${newConnectionName.trim()}". Time to vote!`,
-                        { type: 'connection', connectionId: 'new' } // ID not easily available from addDoc result immediately unless we await ref.id
+                        { type: 'connection', connectionId: 'new' }
                     );
                 }
             }
@@ -200,8 +216,6 @@ const MatchedMovieScreen = () => {
                 </Text>
             </View>
 
-            {/* Delete Button (Only if creator or just allow anyone for now? Assuming anyone can leave/delete for simplicity or check createdBy) */}
-            {/* Let's allow deletion for everyone for now as per "I need to be able to delete groups" */}
             <TouchableOpacity
                 style={styles.deleteButton}
                 onPress={() => handleDeleteConnection(item.id, item.name)}
@@ -264,15 +278,15 @@ const MatchedMovieScreen = () => {
                             onChangeText={setNewConnectionName}
                         />
 
-                        <Text style={styles.label}>Duration: {duration} Days</Text>
+                        <Text style={styles.label}>Duration</Text>
                         <View style={styles.durationContainer}>
-                            {[1, 3, 7, 14].map(days => (
+                            {DURATION_OPTIONS.map(opt => (
                                 <TouchableOpacity
-                                    key={days}
-                                    style={[styles.durationBtn, duration === days && styles.durationBtnActive]}
-                                    onPress={() => setDuration(days)}
+                                    key={opt.value}
+                                    style={[styles.durationBtn, duration === opt.value && styles.durationBtnActive]}
+                                    onPress={() => setDuration(opt.value)}
                                 >
-                                    <Text style={[styles.durationText, duration === days && { color: '#000' }]}>{days}d</Text>
+                                    <Text style={[styles.durationText, duration === opt.value && { color: '#000' }]}>{opt.label}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
@@ -390,16 +404,6 @@ const styles = StyleSheet.create({
     participantsText: {
         color: '#666',
         fontSize: 12
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        marginTop: 50
-    },
-    emptyText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginTop: 15
     },
     emptySubText: {
         color: '#666',

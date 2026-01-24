@@ -210,7 +210,9 @@ const HomeScreen = () => {
                                 currentUserId: auth.currentUser?.uid
                             })}
                         >
-                            <Text style={styles.statNumber}>{userProfile?.following?.length || 0}</Text>
+                            <Text style={styles.statNumber}>
+                                {userProfile?.following ? new Set(userProfile.following.map(u => u.uid)).size : 0}
+                            </Text>
                             <Text style={styles.statLabel}>Following</Text>
                         </TouchableOpacity>
 
@@ -224,7 +226,9 @@ const HomeScreen = () => {
                                 currentUserId: auth.currentUser?.uid
                             })}
                         >
-                            <Text style={styles.statNumber}>{userProfile?.followers?.length || 0}</Text>
+                            <Text style={styles.statNumber}>
+                                {userProfile?.followers ? new Set(userProfile.followers.map(u => u.uid)).size : 0}
+                            </Text>
                             <Text style={styles.statLabel}>Followers</Text>
                         </TouchableOpacity>
                     </View>
@@ -528,12 +532,13 @@ const styles = StyleSheet.create({
     // Top 4 Friends
     topFriendsContainer: {
         flexDirection: 'row',
-        justifyContent: 'flex-start',
+        justifyContent: 'space-between', // Spread evenly
+        flexWrap: 'nowrap', // Force one line
     },
     topFriendItem: {
         alignItems: 'center',
-        marginRight: 20,
-        width: 70,
+        width: '23%', // Fit 4 items perfectly
+        marginBottom: 10
     },
     topFriendImage: {
         width: 70,

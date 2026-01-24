@@ -79,36 +79,57 @@ const PublicProfileScreen = () => {
             const targetUserRef = doc(db, "users", userId);
             const currentUserRef = doc(db, "users", currentUserId);
 
-            // Minimal data objects
+            // Fetch latest data for both
+            const [targetSnap, currentUserSnap] = await Promise.all([
+                getDoc(targetUserRef),
+                getDoc(currentUserRef)
+            ]);
+
+            if (!targetSnap.exists() || !currentUserSnap.exists()) return;
+
+            const targetData = targetSnap.data();
+            const currentUserData = currentUserSnap.data();
+
+            // Prepare objects
             const targetUserInfo = {
                 uid: userId,
-                username: userData.username,
-                profilePhoto: userData.profilePhoto
+                username: targetData.username || 'Unknown',
+                profilePhoto: targetData.profilePhoto || null
             };
 
-            // Note: We need current user info to add to target's followers
-            // For simplicity, fetching it or assuming it's correct context could be better, 
-            // but let's fetch strictly to be safe.
-            const currentUserSnap = await getDoc(currentUserRef);
-            const currentUserData = currentUserSnap.data();
             const myselfInfo = {
                 uid: currentUserId,
-                username: currentUserData.username,
-                profilePhoto: currentUserData.profilePhoto
+                username: currentUserData.username || 'Unknown',
+                profilePhoto: currentUserData.profilePhoto || null
             };
 
-            if (isFollowing) {
-                // Unfollow
-                await updateDoc(currentUserRef, { following: arrayRemove(targetUserInfo) });
-                await updateDoc(targetUserRef, { followers: arrayRemove(myselfInfo) });
-                setIsFollowing(false);
-            } else {
-                // Follow
-                await updateDoc(currentUserRef, { following: arrayUnion(targetUserInfo) });
-                await updateDoc(targetUserRef, { followers: arrayUnion(myselfInfo) });
-                setIsFollowing(true);
+            let newFollowing = currentUserData.following || [];
+            let newFollowers = targetData.followers || [];
+            let isNowFollowing = false;
 
-                // Send Notification
+            if (isFollowing) {
+                // UNFOLLOW: Remove by UID to be safe (ignoring stale photo/name data)
+                newFollowing = newFollowing.filter(f => f.uid !== userId);
+                newFollowers = newFollowers.filter(f => f.uid !== currentUserId);
+                isNowFollowing = false;
+            } else {
+                // FOLLOW: Remove any existing (duplicate cleanup) then add new
+                newFollowing = newFollowing.filter(f => f.uid !== userId);
+                newFollowing.push(targetUserInfo);
+
+                newFollowers = newFollowers.filter(f => f.uid !== currentUserId);
+                newFollowers.push(myselfInfo);
+                isNowFollowing = true;
+            }
+
+            // Write updates
+            await updateDoc(currentUserRef, { following: newFollowing });
+            await updateDoc(targetUserRef, { followers: newFollowers });
+
+            setIsFollowing(isNowFollowing);
+
+            // Send Notification only on Follow
+            if (isNowFollowing) {
                 const token = await getUserPushToken(userId);
                 if (token) {
                     await sendPushNotification(
@@ -764,12 +785,12 @@ const styles = StyleSheet.create({
     // Top Friends
     topFriendsContainer: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        flexWrap: 'nowrap',
     },
     topFriendItem: {
         alignItems: 'center',
-        marginRight: 15,
-        width: 70,
+        width: '23%', // Ensures 4 items fit perfectly (4x23 = 92% + gap)
         marginBottom: 10
     },
     topFriendImage: {
