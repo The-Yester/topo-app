@@ -52,7 +52,7 @@ function HomeStackNavigator() {
 // Bottom tab navigator
 function BottomTabs() {
     return (
-        <Tab.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: '#e50914', tabBarInactiveTintColor: 'gray', tabBarStyle: { backgroundColor: '#0a0a1a', borderTopColor: '#222' } }}>
+        <Tab.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: '#ff8c00', tabBarInactiveTintColor: 'gray', tabBarStyle: { backgroundColor: '#0a0a1a', borderTopColor: '#222' } }}>
             <Tab.Screen
                 name="Home"
                 component={HomeStackNavigator}

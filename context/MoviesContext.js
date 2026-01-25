@@ -277,6 +277,13 @@ export const MoviesProvider = ({ children }) => {
                 stats: newStats
             }, { merge: true });
 
+            // 5. Auto-Remove from Watch Later (ID: 2) if present
+            const watchLaterList = movieLists.find(l => l.id === 2);
+            if (watchLaterList && watchLaterList.movies.some(m => m.id === movieId)) {
+                await removeMovieFromList(2, movieId);
+                console.log(`Auto-removed movie ${movieId} from Watch Later`);
+            }
+
         } catch (error) {
             console.error("Error submitting rating using submitRating:", error);
         }

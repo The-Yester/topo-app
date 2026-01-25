@@ -49,7 +49,7 @@ const StreamingServicesScreen = () => {
                 style={[styles.providerItem, isSelected && styles.selectedProviderItem]}
                 onPress={() => setSelectedProvider(item)}
             >
-                <Image source={{ uri: item.logo }} style={styles.providerLogo} />
+                <Image source={{ uri: item.logo }} style={[styles.providerLogo, isSelected && styles.selectedProviderLogo]} />
                 <Text style={[styles.providerName, isSelected && styles.selectedProviderName]}>{item.name}</Text>
             </TouchableOpacity>
         );
@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
         color: '#fff',
     },
     providerListContainer: {
-        paddingVertical: 15,
+        paddingVertical: 20,
         backgroundColor: '#161625',
     },
     providerListContent: {
@@ -133,19 +133,21 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginHorizontal: 10,
         opacity: 0.6,
-        transform: [{ scale: 0.9 }]
     },
     selectedProviderItem: {
         opacity: 1,
-        transform: [{ scale: 1.1 }]
     },
     providerLogo: {
         width: 60,
         height: 60,
         borderRadius: 12,
-        marginBottom: 5,
+        marginBottom: 10,
         borderWidth: 2,
-        borderColor: 'transparent'
+        borderColor: 'transparent',
+        transform: [{ scale: 0.9 }]
+    },
+    selectedProviderLogo: {
+        transform: [{ scale: 1.1 }],
     },
     selectedProviderName: {
         color: '#ff8c00', // Highlight color
@@ -154,6 +156,7 @@ const styles = StyleSheet.create({
     providerName: {
         color: '#fff',
         fontSize: 12,
+        paddingBottom: 5 // Ensure text bottom isn't cut off
     },
     moviesContainer: {
         flex: 1,

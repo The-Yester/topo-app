@@ -744,9 +744,13 @@ const MovieDetailScreen = ({ route }) => {
                         <Text style={styles.modalTitle}>Write a Review for {movie?.title}</Text>
                         <TextInput style={styles.reviewInput} multiline placeholder="Your review..." placeholderTextColor="#888" value={reviewText} onChangeText={setReviewText} textAlignVertical="top" />
                         <View style={styles.modalButtonSeparator} />
-                        <Button title="Submit Review" onPress={handleReviewSubmit} />
+                        <TouchableOpacity style={styles.modalSubmitButton} onPress={handleReviewSubmit}>
+                            <Text style={styles.modalSubmitButtonText}>Submit Review</Text>
+                        </TouchableOpacity>
                         <View style={styles.modalButtonSeparator} />
-                        <Button title="Cancel" onPress={() => setReviewModalVisible(false)} color="#FF6347" />
+                        <TouchableOpacity style={styles.modalSecondaryButton} onPress={() => setReviewModalVisible(false)}>
+                            <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
             </Modal>

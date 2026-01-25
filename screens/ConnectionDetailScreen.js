@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Platform, StatusBar, ActivityIndicator, FlatList, TouchableOpacity, Alert, Image, ScrollView, Modal, TextInput } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { db, auth } from '../firebaseConfig';
@@ -9,6 +10,7 @@ import { TMDB_API_KEY } from '../utils/config';
 
 const ConnectionDetailScreen = ({ route, navigation }) => {
     const { connectionId } = route.params;
+    const isFocused = useIsFocused();
     const [connection, setConnection] = useState(null);
     const [loading, setLoading] = useState(true);
     const [currentUser, setCurrentUser] = useState(auth.currentUser);
@@ -158,15 +160,20 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                             return { uid, username: 'Unknown' };
                         }
                     })).then(freshParticipants => {
-                        setConnection(prev => ({ ...prev, participantDetails: freshParticipants }));
+                        if (isFocused) {
+                            setConnection(prev => ({ ...prev, participantDetails: freshParticipants }));
+                        }
                     });
                 }
 
             } else {
-                Alert.alert("Error", "Connection not found.");
-                navigation.goBack();
+                // Only alert and redirect if the user is actually ON this screen
+                if (isFocused) {
+                    Alert.alert("Error", "Connection not found.");
+                    navigation.goBack();
+                }
             }
-            setLoading(false);
+            if (isFocused) setLoading(false);
         });
 
         return () => unsubscribe();
