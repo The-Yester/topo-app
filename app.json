@@ -29,7 +29,8 @@
         "foregroundImage": "./assets/fixed-icon.png",
         "backgroundColor": "#23242f"
       },
-      "package": "com.ryester.topo"
+      "package": "com.ryester.topo",
+      "versionCode": 2
     },
     "extra": {
       "eas": {
@@ -44,6 +45,15 @@
         {
           "icon": "./assets/fixed-icon.png",
           "color": "#ffffff"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
+          }
         }
       ]
     ]

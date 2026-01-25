@@ -12,7 +12,7 @@ import {
     ActivityIndicator,
     SafeAreaView
 } from 'react-native';
-import { searchMovies, getGenres } from '../api/MovieService';
+import { searchMovies, searchMulti, getGenres } from '../api/MovieService';
 import { debounce } from 'lodash';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
@@ -22,25 +22,30 @@ const SearchScreen = () => {
     const [query, setQuery] = useState('');
     // Initialize with static genres immediately
     const [genres, setGenres] = useState(STATIC_GENRES);
-    const [movies, setMovies] = useState([]); // Store search results
+    const [results, setResults] = useState([]); // Store search results (Movies + People)
     const [loading, setLoading] = useState(false);
 
     // Removed useEffect fetching genres to improve load time
     // useEffect(() => { ... }, []);
 
-    // Helper to fetch movies
-    const fetchMovies = async (searchQuery) => {
+    // Helper to fetch results
+    const fetchResults = async (searchQuery) => {
         if (!searchQuery.trim()) {
-            setMovies([]);
+            setResults([]);
             setLoading(false);
             return;
         }
         setLoading(true);
         try {
-            const results = await searchMovies(searchQuery);
-            setMovies(results); // Update state with filtered list
+            const data = await searchMulti(searchQuery);
+            // Filter out people without profile path or minimal info if desired, 
+            // but for now let's show everything relevant (Movies, People). 
+            // Filter out 'tv' if not supported yet or just let them show (but might crash on detail nav if not handled).
+            // Let's filter for movie and person only.
+            const filtered = data.filter(item => item.media_type === 'movie' || item.media_type === 'person');
+            setResults(filtered);
         } catch (error) {
-            console.error("Error searching movies:", error);
+            console.error("Error searching:", error);
         } finally {
             setLoading(false);
         }
@@ -49,7 +54,7 @@ const SearchScreen = () => {
     // Debounce the API call
     // Note: We keep the debounced function stable with useCallback
     const debouncedSearch = useCallback(
-        debounce((text) => fetchMovies(text), 400),
+        debounce((text) => fetchResults(text), 400),
         []
     );
 
@@ -65,22 +70,44 @@ const SearchScreen = () => {
         navigation.navigate('GenreMoviesScreen', { genreId: genre.id, genreName: genre.name });
     };
 
-    const renderMovieItem = ({ item }) => (
-        <TouchableOpacity
-            style={styles.movieItem}
-            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
-        >
-            <Image
-                source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
-                style={styles.moviePoster}
-            />
-            <View style={styles.movieInfo}>
-                <Text style={styles.movieTitle}>{item.title}</Text>
-                <Text style={styles.movieYear}>{item.release_date ? item.release_date.split('-')[0] : 'N/A'}</Text>
-            </View>
-            <Icon name="chevron-right" size={14} color="#666" />
-        </TouchableOpacity>
-    );
+    const renderResultItem = ({ item }) => {
+        if (item.media_type === 'person') {
+            return (
+                <TouchableOpacity
+                    style={styles.resultItem}
+                    onPress={() => navigation.navigate('ActorDetail', { personId: item.id })}
+                >
+                    <Image
+                        source={item.profile_path ? { uri: `https://image.tmdb.org/t/p/w200${item.profile_path}` } : require('../assets/profile_placeholder.jpg')}
+                        style={styles.personImage}
+                    />
+                    <View style={styles.resultInfo}>
+                        <Text style={styles.resultTitle}>{item.name}</Text>
+                        <Text style={styles.resultSubtitle}>Actor • {item.known_for_department}</Text>
+                    </View>
+                    <Icon name="chevron-right" size={14} color="#666" />
+                </TouchableOpacity>
+            );
+        } else {
+            // Movie
+            return (
+                <TouchableOpacity
+                    style={styles.resultItem}
+                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                >
+                    <Image
+                        source={item.poster_path ? { uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` } : require('../assets/TOPO_Logo.jpg')} // Fallback if needed
+                        style={styles.moviePoster}
+                    />
+                    <View style={styles.resultInfo}>
+                        <Text style={styles.resultTitle}>{item.title}</Text>
+                        <Text style={styles.resultSubtitle}>{item.release_date ? item.release_date.split('-')[0] : 'N/A'}</Text>
+                    </View>
+                    <Icon name="chevron-right" size={14} color="#666" />
+                </TouchableOpacity>
+            );
+        }
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -93,7 +120,7 @@ const SearchScreen = () => {
                     <Icon name="search" size={18} color="#888" style={styles.searchIcon} />
                     <TextInput
                         style={styles.textInput}
-                        placeholder="Search movies, genres..."
+                        placeholder="Search movies, people, genres..."
                         placeholderTextColor="#666"
                         onChangeText={handleTextChange}
                         value={query}
@@ -113,13 +140,13 @@ const SearchScreen = () => {
                 </View>
             ) : query.length > 0 ? (
                 <FlatList
-                    data={movies}
-                    renderItem={renderMovieItem}
+                    data={results}
+                    renderItem={renderResultItem}
                     keyExtractor={(item) => item.id.toString()}
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
                         <View style={styles.centerContent}>
-                            <Text style={styles.emptyText}>No movies found.</Text>
+                            <Text style={styles.emptyText}>No results found.</Text>
                         </View>
                     }
                 />
@@ -256,8 +283,8 @@ const styles = StyleSheet.create({
         textShadowOffset: { width: 1, height: 1 },
         textShadowRadius: 3
     },
-    // Movie Results
-    movieItem: {
+    // Results
+    resultItem: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#161625',
@@ -272,17 +299,27 @@ const styles = StyleSheet.create({
         height: 75,
         borderRadius: 5,
         marginRight: 15,
+        backgroundColor: '#333'
     },
-    movieInfo: {
+    personImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        marginRight: 15,
+        backgroundColor: '#333',
+        borderWidth: 1,
+        borderColor: '#444'
+    },
+    resultInfo: {
         flex: 1
     },
-    movieTitle: {
+    resultTitle: {
         fontSize: 16,
         fontWeight: 'bold',
         color: '#fff',
         marginBottom: 4
     },
-    movieYear: {
+    resultSubtitle: {
         fontSize: 14,
         color: '#888'
     },

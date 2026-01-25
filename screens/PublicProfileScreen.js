@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, FlatList, ActivityIndicator, ImageBackground, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, FlatList, ActivityIndicator, ImageBackground, Alert, Modal } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
@@ -21,6 +21,11 @@ const PublicProfileScreen = () => {
     const [hydratedTopFriends, setHydratedTopFriends] = useState([]);
     const { addMovieToList } = useContext(MoviesContext);
 
+    // Likers Modal State
+    const [likersModalVisible, setLikersModalVisible] = useState(false);
+    const [likersList, setLikersList] = useState([]);
+    const [loadingLikers, setLoadingLikers] = useState(false);
+
     useEffect(() => {
         fetchProfile();
     }, [userId]);
@@ -30,6 +35,32 @@ const PublicProfileScreen = () => {
             const userDoc = await getDoc(doc(db, "users", userId));
             if (userDoc.exists()) {
                 const data = userDoc.data();
+
+                // Deduplicate Social Counts for Display
+                if (data.following) {
+                    const unique = [];
+                    const seen = new Set();
+                    data.following.forEach(u => {
+                        if (!seen.has(u.uid)) {
+                            seen.add(u.uid);
+                            unique.push(u);
+                        }
+                    });
+                    data.following = unique;
+                }
+
+                if (data.followers) {
+                    const unique = [];
+                    const seen = new Set();
+                    data.followers.forEach(u => {
+                        if (!seen.has(u.uid)) {
+                            seen.add(u.uid);
+                            unique.push(u);
+                        }
+                    });
+                    data.followers = unique;
+                }
+
                 setUserData(data);
 
                 // Fetch fresh Top 4 data
@@ -241,6 +272,30 @@ const PublicProfileScreen = () => {
         } catch (error) {
             console.error("Error toggling like:", error);
             Alert.alert("Error", "Could not update like.");
+        }
+    };
+
+    const handleViewLikers = async (movie) => {
+        const likedBy = movie.likedBy || [];
+        if (likedBy.length === 0) return;
+
+        setLoadingLikers(true);
+        setLikersModalVisible(true);
+        setLikersList([]);
+
+        try {
+            const promises = likedBy.map(uid => getDoc(doc(db, "users", uid)));
+            const snapshots = await Promise.all(promises);
+            const users = snapshots
+                .filter(snap => snap.exists())
+                .map(snap => ({ uid: snap.id, ...snap.data() }));
+
+            setLikersList(users);
+        } catch (error) {
+            console.error("Error fetching likers:", error);
+            Alert.alert("Error", "Could not load likes.");
+        } finally {
+            setLoadingLikers(false);
         }
     };
 
@@ -458,15 +513,23 @@ const PublicProfileScreen = () => {
 
                                         {/* Actions Row */}
                                         <View style={styles.actionButtonsRow}>
-                                            <TouchableOpacity
-                                                style={[styles.miniButton, isLiked && styles.miniButtonActive]}
-                                                onPress={() => handleLikeToggle(item)}
-                                            >
-                                                <Icon name="heart" size={10} color={isLiked ? "white" : "#e50914"} />
-                                                <Text style={[styles.miniButtonText, isLiked && { color: 'white' }]}>
-                                                    {likeCount > 0 ? likeCount : ''}
-                                                </Text>
-                                            </TouchableOpacity>
+                                            <View style={styles.miniButtonSplit}>
+                                                <TouchableOpacity
+                                                    style={[styles.miniButtonLeft, isLiked && styles.miniButtonActive]}
+                                                    onPress={() => handleLikeToggle(item)}
+                                                >
+                                                    <Icon name="heart" size={10} color={isLiked ? "white" : "#e50914"} />
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={[styles.miniButtonRight, isLiked && styles.miniButtonActive]}
+                                                    onPress={() => handleViewLikers(item)}
+                                                    disabled={likeCount === 0}
+                                                >
+                                                    <Text style={[styles.miniButtonText, isLiked && { color: 'white' }]}>
+                                                        {likeCount > 0 ? likeCount : '0'}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            </View>
 
                                             <TouchableOpacity
                                                 style={[styles.miniButton, { backgroundColor: '#4682b4', marginLeft: 5 }]}
@@ -576,6 +639,50 @@ const PublicProfileScreen = () => {
                 <View style={{ height: 40 }} />
 
             </ScrollView>
+
+            {/* Likers Modal */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={likersModalVisible}
+                onRequestClose={() => setLikersModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Liked By</Text>
+                            <TouchableOpacity onPress={() => setLikersModalVisible(false)}>
+                                <Icon name="close" size={20} color="#ccc" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {loadingLikers ? (
+                            <ActivityIndicator size="large" color="#ff8c00" style={{ marginTop: 20 }} />
+                        ) : (
+                            <FlatList
+                                data={likersList}
+                                keyExtractor={(item) => item.uid}
+                                ListEmptyComponent={<Text style={styles.emptyText}>No likes yet.</Text>}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
+                                        style={styles.likerItem}
+                                        onPress={() => {
+                                            setLikersModalVisible(false);
+                                            navigation.push('PublicProfile', { userId: item.uid });
+                                        }}
+                                    >
+                                        <Image
+                                            source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')}
+                                            style={styles.likerImage}
+                                        />
+                                        <Text style={styles.likerName}>{item.username || "Unknown Code Name"}</Text>
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        )}
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -768,6 +875,76 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#e50914'
+    },
+    miniButtonSplit: {
+        flexDirection: 'row',
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#e50914',
+        overflow: 'hidden'
+    },
+    miniButtonLeft: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRightWidth: 1,
+        borderRightColor: '#e50914' // or mild separator
+    },
+    miniButtonRight: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        minWidth: 24,
+        alignItems: 'center'
+    },
+    likerItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#333'
+    },
+    likerImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: 10
+    },
+    likerName: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold'
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    modalContent: {
+        width: '90%',
+        maxHeight: '70%',
+        backgroundColor: '#161625',
+        borderRadius: 15,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: '#333'
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#333',
+        paddingBottom: 10
+    },
+    modalTitle: {
+        color: '#ff8c00',
+        fontSize: 18,
+        fontWeight: 'bold'
     },
     miniButtonActive: {
         backgroundColor: '#e50914',

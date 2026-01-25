@@ -75,4 +75,40 @@ export const getMoviesByProvider = async (providerId) => {
     console.error('Error fetching movies by provider:', error);
     return [];
   }
+};
+
+// ✅ Unified Search (Movies & People) - Direct TMDB
+export const searchMulti = async (query) => {
+  if (!query || query.trim() === '') return [];
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/search/multi`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        query: query,
+        include_adult: false,
+        language: 'en-US',
+        page: 1
+      }
+    });
+    return response.data.results || [];
+  } catch (error) {
+    console.error('Error searching multi:', error);
+    return [];
+  }
+};
+
+// ✅ Get Person Details with Combined Credits - Direct TMDB
+export const getPersonDetails = async (personId) => {
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/person/${personId}`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        append_to_response: 'combined_credits'
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching person details:', error);
+    throw error;
+  }
 }; 

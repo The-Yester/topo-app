@@ -31,6 +31,7 @@ import PublicProfileScreen from './screens/PublicProfileScreen';
 import AwardsHubScreen from './screens/AwardsHubScreen';
 import AdminAwardsScreen from './screens/AdminAwardsScreen';
 import RatingInstructionsScreen from './screens/RatingInstructionsScreen';
+import ActorDetailScreen from './screens/ActorDetailScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -145,6 +146,7 @@ function AppNavigator() {
                     <Stack.Screen name="PublicProfile" component={PublicProfileScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="FollowList" component={FollowListScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="RatingInstructions" component={RatingInstructionsScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="ActorDetail" component={ActorDetailScreen} options={{ headerShown: false }} />
                 </Stack.Navigator>
             </NavigationContainer>
         </MoviesProvider>

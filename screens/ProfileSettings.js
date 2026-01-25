@@ -140,8 +140,30 @@ const ProfileSettings = ({ navigation }) => {
                 setSelectedRatingSystem(data.ratingSystem || 'awards');
 
                 // Social Data
-                setFollowing(data.following || []);
-                setFollowers(data.followers || []);
+                // Deduplicate Following to match FollowListScreen logic
+                const rawFollowing = data.following || [];
+                const uniqueFollowing = [];
+                const seenFollowing = new Set();
+                rawFollowing.forEach(item => {
+                    if (!seenFollowing.has(item.uid)) {
+                        seenFollowing.add(item.uid);
+                        uniqueFollowing.push(item);
+                    }
+                });
+
+                // Deduplicate Followers just in case
+                const rawFollowers = data.followers || [];
+                const uniqueFollowers = [];
+                const seenFollowers = new Set();
+                rawFollowers.forEach(item => {
+                    if (!seenFollowers.has(item.uid)) {
+                        seenFollowers.add(item.uid);
+                        uniqueFollowers.push(item);
+                    }
+                });
+
+                setFollowing(uniqueFollowing);
+                setFollowers(uniqueFollowers);
                 setTopFriends(data.topFriends || []);
 
                 // Allow edit ONLY if fields were empty in DB
@@ -559,20 +581,21 @@ const ProfileSettings = ({ navigation }) => {
 
                     <Text style={[styles.label, { marginTop: 20 }]}>Top 4 Friends</Text>
                     <Text style={styles.subLabel}>Tap friends in the "Find" modal to add them here.</Text>
-                    <FlatList
-                        horizontal
-                        data={hydratedTopFriends.length > 0 ? hydratedTopFriends : topFriends}
-                        keyExtractor={item => item.uid}
-                        renderItem={({ item }) => (
-                            <View style={styles.topFriendItem}>
-                                <Image source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')} style={styles.topFriendImg} />
-                                <TouchableOpacity style={styles.removeFriendBadge} onPress={() => toggleTopFriend(item)}>
-                                    <Icon name="times" size={10} color="#fff" />
-                                </TouchableOpacity>
-                            </View>
+                    <View style={styles.topFriendsGrid}>
+                        {((hydratedTopFriends.length > 0 ? hydratedTopFriends : topFriends)).length > 0 ? (
+                            (hydratedTopFriends.length > 0 ? hydratedTopFriends : topFriends).map(item => (
+                                <View key={item.uid} style={styles.topFriendItemGrid}>
+                                    <Image source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')} style={styles.topFriendImg} />
+                                    <TouchableOpacity style={styles.removeFriendBadge} onPress={() => toggleTopFriend(item)}>
+                                        <Icon name="times" size={10} color="#fff" />
+                                    </TouchableOpacity>
+                                    <Text style={styles.topFriendName} numberOfLines={1}>{item.username}</Text>
+                                </View>
+                            ))
+                        ) : (
+                            <Text style={{ color: '#666', fontStyle: 'italic', width: '100%' }}>No Top Friends selected.</Text>
                         )}
-                        ListEmptyComponent={<Text style={{ color: '#666', fontStyle: 'italic' }}>No Top Friends selected.</Text>}
-                    />
+                    </View>
                 </View>
 
                 <View style={styles.separator} />
@@ -827,9 +850,11 @@ const styles = StyleSheet.create({
     statLabel: { color: '#888', fontSize: 14 },
     outlineButton: { borderWidth: 1, borderColor: '#ff8c00', padding: 10, borderRadius: 8, alignItems: 'center' },
     outlineButtonText: { color: '#ff8c00', fontWeight: 'bold' },
-    topFriendItem: { marginRight: 15, position: 'relative' },
+    topFriendsGrid: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    topFriendItemGrid: { alignItems: 'center', width: '23%', position: 'relative' },
+    topFriendName: { color: '#ccc', fontSize: 10, marginTop: 4, textAlign: 'center' },
     topFriendImg: { width: 60, height: 60, borderRadius: 30, borderWidth: 1, borderColor: '#333' },
-    removeFriendBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: 'red', width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    removeFriendBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: 'red', width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
 
     // Friend Modal
     friendRow: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
