@@ -70,7 +70,7 @@ const StreamingServicesScreen = () => {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Streaming Available</Text>
+                <Text style={styles.headerTitle}>What's Streaming</Text>
             </View>
 
             {/* Provider Selector */}
@@ -98,6 +98,14 @@ const StreamingServicesScreen = () => {
                         numColumns={3}
                         contentContainerStyle={styles.moviesGrid}
                         showsVerticalScrollIndicator={false}
+                        ListFooterComponent={
+                            <View style={styles.attributionContainer}>
+                                <Text style={styles.attributionText}>This product uses the TMDB API but is not endorsed or certified by TMDB.</Text>
+                                <Text style={[styles.attributionText, { marginTop: 10 }]}>
+                                    TOPO Movies is a movie discovery and rating app. This app does not stream movies or TV shows and is not affiliated with or endorsed by any movie studio or streaming service.
+                                </Text>
+                            </View>
+                        }
                     />
                 )}
             </View>
@@ -182,6 +190,19 @@ const styles = StyleSheet.create({
         width: '100%',
         height: 160,
         resizeMode: 'cover',
+    },
+    attributionContainer: {
+        padding: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: 0.5,
+        marginTop: 20
+    },
+    attributionText: {
+        color: '#fff',
+        fontSize: 12,
+        fontStyle: 'italic',
+        textAlign: 'center',
     },
 });
 

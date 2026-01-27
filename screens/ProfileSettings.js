@@ -715,6 +715,14 @@ const ProfileSettings = ({ navigation }) => {
                     </TouchableOpacity>
                 </View>
 
+                {/* Attribution Footer */}
+                <View style={styles.attributionContainer}>
+                    <Text style={styles.attributionText}>This product uses the TMDB API but is not endorsed or certified by TMDB.</Text>
+                    <Text style={[styles.attributionText, { marginTop: 10 }]}>
+                        TOPO Movies is a movie discovery and rating app. This app does not stream movies or TV shows and is not affiliated with or endorsed by any movie studio or streaming service.
+                    </Text>
+                </View>
+
                 <View style={{ height: 40 }} />
             </ScrollView>
 
@@ -923,7 +931,20 @@ const styles = StyleSheet.create({
     aboutText: {
         color: '#ccc',
         fontSize: 16
-    }
+    },
+    attributionContainer: {
+        padding: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: 0.5,
+        marginBottom: 20
+    },
+    attributionText: {
+        color: '#fff',
+        fontSize: 12,
+        fontStyle: 'italic',
+        textAlign: 'center',
+    },
 });
 
 export default ProfileSettings;

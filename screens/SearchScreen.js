@@ -109,6 +109,15 @@ const SearchScreen = () => {
         }
     };
 
+    const renderFooter = () => (
+        <View style={styles.attributionContainer}>
+            <Text style={styles.attributionText}>This product uses the TMDB API but is not endorsed or certified by TMDB.</Text>
+            <Text style={[styles.attributionText, { marginTop: 10 }]}>
+                TOPO Movies is a movie discovery and rating app. This app does not stream movies or TV shows and is not affiliated with or endorsed by any movie studio or streaming service.
+            </Text>
+        </View>
+    );
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
@@ -120,7 +129,7 @@ const SearchScreen = () => {
                     <Icon name="search" size={18} color="#888" style={styles.searchIcon} />
                     <TextInput
                         style={styles.textInput}
-                        placeholder="Search movies, people, genres..."
+                        placeholder="Search Movies, Genres, Actors & Directors"
                         placeholderTextColor="#666"
                         onChangeText={handleTextChange}
                         value={query}
@@ -149,6 +158,7 @@ const SearchScreen = () => {
                             <Text style={styles.emptyText}>No results found.</Text>
                         </View>
                     }
+                    ListFooterComponent={renderFooter}
                 />
             ) : (
                 <View style={{ flex: 1 }}>
@@ -170,12 +180,8 @@ const SearchScreen = () => {
                         numColumns={2}
                         columnWrapperStyle={styles.columnWrapper}
                         contentContainerStyle={styles.listContent}
+                        ListFooterComponent={renderFooter}
                     />
-
-                    {/* Attribution Footer */}
-                    <View style={styles.attributionContainer}>
-                        <Text style={styles.attributionText}>This product uses the TMDB API but is not endorsed or certified by TMDB.</Text>
-                    </View>
                 </View>
             )}
         </SafeAreaView>
@@ -221,6 +227,7 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontStyle: 'italic',
         fontFamily: 'Trebuchet MS',
+        textAlign: 'center',
     },
     searchBar: {
         flexDirection: 'row',
