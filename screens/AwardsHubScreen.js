@@ -266,8 +266,11 @@ const AwardsHubScreen = () => {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Icon name="chevron-left" size={20} color="#fff" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Awards Season Hub</Text>
-                <View style={{ width: 20 }} />
+                <View style={styles.headerTitleContainer}>
+                    <Text style={styles.headerTitle}>Awards Season Hub</Text>
+                    <Text style={styles.headerSubtitle}>Prediction Ballot Game</Text>
+                </View>
+                <View style={{ width: 40 }} />
             </View>
 
             {/* EVENT SELECTOR TABS */}
@@ -454,6 +457,13 @@ const AwardsHubScreen = () => {
                     </TouchableOpacity>
                 )}
 
+                <View style={styles.attributionContainer}>
+                    <Text style={styles.attributionText}>This feature is a fan-made prediction game.</Text>
+                    <Text style={[styles.attributionText, { marginTop: 5 }]}>
+                        TOPO Movies is not affiliated with, endorsed by, or associated with the Academy of Motion Picture Arts and Sciences or any other awards organization, studio, or individual.
+                    </Text>
+                </View>
+
             </ScrollView>
         </SafeAreaView>
     );
@@ -464,9 +474,11 @@ const styles = StyleSheet.create({
     center: { justifyContent: 'center', alignItems: 'center' },
     loadingText: { color: '#888', marginTop: 10 },
 
-    header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
-    backButton: { marginRight: 15 },
+    header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
+    backButton: { marginRight: 0 },
+    headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+    headerSubtitle: { color: '#FFD700', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold', marginTop: 2 },
 
     tabsContainer: { height: 50, borderBottomWidth: 1, borderBottomColor: '#222' },
     tabsContent: { paddingHorizontal: 15, alignItems: 'center' },
@@ -536,7 +548,10 @@ const styles = StyleSheet.create({
     scoreSubtext: { color: '#aaa', fontSize: 9 },
 
     userRatingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 215, 0, 0.15)', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4, borderWidth: 1, borderColor: '#FFD700' },
-    userRatingText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' }
+    userRatingText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
+
+    attributionContainer: { padding: 20, alignItems: 'center', justifyContent: 'center', opacity: 0.5, marginTop: 20 },
+    attributionText: { color: '#fff', fontSize: 10, fontStyle: 'italic', textAlign: 'center' }
 
 });
 
