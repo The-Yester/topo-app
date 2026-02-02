@@ -58,7 +58,7 @@ const StreamingServicesScreen = () => {
     const renderMovieItem = ({ item }) => (
         <TouchableOpacity
             style={styles.movieCard}
-            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
         >
             <Image
                 source={{ uri: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://via.placeholder.com/150' }}

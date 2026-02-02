@@ -112,7 +112,7 @@ const ActorDetailScreen = () => {
                                 style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}
                                 onPress={() => {
                                     if (isMovie) {
-                                        navigation.push('MovieDetails', { movieId: item.id });
+                                        navigation.push('MovieDetails', { movieId: item.id, movie: item });
                                     } else {
                                         // Handle TV Show navigation if/when implemented
                                         // For now, maybe an alert or no-op?

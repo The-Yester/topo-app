@@ -23,7 +23,12 @@ export const searchMovies = async (query) => {
 
 export const getMovieDetails = async (movieId) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/movie/${movieId}`);
+    const response = await axios.get(`${TMDB_BASE_URL}/movie/${movieId}`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        append_to_response: 'credits'
+      }
+    });
     return response.data;
   } catch (error) {
     console.error('Error fetching movie details:', error);

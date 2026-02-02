@@ -503,7 +503,7 @@ const PublicProfileScreen = () => {
                                     <View key={item.id} style={styles.top8ItemContainer}>
                                         <TouchableOpacity
                                             style={styles.top8Item}
-                                            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                                            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
                                         >
                                             <Image
                                                 source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
@@ -561,7 +561,7 @@ const PublicProfileScreen = () => {
                             renderItem={({ item }) => (
                                 <TouchableOpacity
                                     style={styles.posterItem}
-                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
                                 >
                                     <Image
                                         source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
@@ -588,7 +588,7 @@ const PublicProfileScreen = () => {
                             renderItem={({ item }) => (
                                 <TouchableOpacity
                                     style={styles.posterItem}
-                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
                                 >
                                     <Image
                                         source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}
@@ -617,7 +617,7 @@ const PublicProfileScreen = () => {
                             renderItem={({ item }) => (
                                 <TouchableOpacity
                                     style={styles.posterItem}
-                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
                                 >
                                     <Image
                                         source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }}

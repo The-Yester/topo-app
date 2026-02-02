@@ -1,11 +1,11 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ScrollView, Dimensions, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ScrollView, Dimensions, SafeAreaView, Platform, StatusBar, Modal } from 'react-native';
 import { MoviesContext } from '../context/MoviesContext';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../firebaseConfig';
-import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, updateDoc } from 'firebase/firestore';
 import { getMovieDetails } from '../api/MovieService'; // Ensure we have this
 import { TMDB_API_KEY } from '../utils/config';
 
@@ -17,6 +17,20 @@ const HomeScreen = () => {
 
     const [userProfile, setUserProfile] = useState(null);
     const [inTheatersMovies, setInTheatersMovies] = useState([]);
+    const [showIntroModal, setShowIntroModal] = useState(false);
+
+    const handleDismissIntro = async () => {
+        setShowIntroModal(false);
+        if (auth.currentUser) {
+            try {
+                await updateDoc(doc(db, "users", auth.currentUser.uid), {
+                    hasSeenIntro: true
+                });
+            } catch (e) {
+                console.error("Error updating intro flag:", e);
+            }
+        }
+    };
 
     // Derived from Firestore profile data
     let top8 = [];
@@ -43,6 +57,10 @@ const HomeScreen = () => {
         const unsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
             if (docSnap.exists()) {
                 setUserProfile(docSnap.data());
+                // Check if user has seen intro
+                if (docSnap.data().hasSeenIntro === undefined || docSnap.data().hasSeenIntro === false) {
+                    setShowIntroModal(true);
+                }
             }
         });
         return () => unsub();
@@ -150,7 +168,7 @@ const HomeScreen = () => {
         return (
             <TouchableOpacity
                 style={styles.posterItem}
-                onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
             >
                 <Image source={{ uri: imageUrl }} style={styles.posterImage} />
                 {renderRatingBadge(item)}
@@ -160,6 +178,70 @@ const HomeScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
+            {/* Onboarding Modal */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={showIntroModal}
+                onRequestClose={handleDismissIntro}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <ScrollView contentContainerStyle={styles.modalScroll}>
+                            <Text style={styles.modalTitle}>TOPO</Text>
+                            <Text style={styles.modalSubtitle}>🎬 Get Started in 5 Easy Steps</Text>
+
+                            <View style={styles.instructionStep}>
+                                <Text style={styles.stepTitle}>1. STEP UP YOUR PROFILE</Text>
+                                <Text style={styles.bulletText}>• Tap Edit Profile (top left corner)</Text>
+                                <Text style={styles.bulletText}>• Update your profile photo</Text>
+                                <Text style={styles.bulletText}>• Refresh your bio</Text>
+                                <Text style={styles.bulletText}>• Find Friends and add them to your Top 4</Text>
+                                <Text style={styles.bulletText}>• Turn on Push Notifications to stay updated on activity and interactions</Text>
+                                <Text style={styles.bulletText}>• Set your rating preference (most important see below)</Text>
+                            </View>
+
+                            <View style={styles.instructionStep}>
+                                <Text style={styles.stepTitle}>2. SET YOUR RATING PREFERENCE ⭐ (MOST IMPORTANT)</Text>
+                                <Text style={styles.bulletText}>• Select your Preferred Rating System</Text>
+                                <Text style={styles.bulletText}>• Choose one of the following five options:</Text>
+                                <Text style={[styles.bulletText, { paddingLeft: 40 }]}>o 🔟 1–10 (Classic)</Text>
+                                <Text style={[styles.bulletText, { paddingLeft: 40 }]}>o 🍕 1–5 Pizza Slices (half slices allowed)</Text>
+                                <Text style={[styles.bulletText, { paddingLeft: 40 }]}>o 📊 Percentage (1–100%)</Text>
+                                <Text style={[styles.bulletText, { paddingLeft: 40 }]}>o 🏆 Awards Rating (15 categories averaged into one score)</Text>
+                                <Text style={[styles.bulletText, { paddingLeft: 40 }]}>o 👍 E&R Variation (Thumbs 1-4)</Text>
+                                <Text style={[styles.bulletText, { fontStyle: 'italic', marginTop: 5 }]}>This choice controls how you rate movies across the app.</Text>
+                            </View>
+
+                            <View style={styles.instructionStep}>
+                                <Text style={styles.stepTitle}>3. PICK YOUR TOP 8 FAVORITE FILMS</Text>
+                                <Text style={styles.bulletText}>• Search for movies and add them to your Top 8</Text>
+                                <Text style={styles.bulletText}>• Want to swap one out? Just tap the “X” in the top-right corner of a movie to remove it and choose another</Text>
+                            </View>
+
+                            <View style={styles.instructionStep}>
+                                <Text style={styles.stepTitle}>4. SAVE YOUR CHANGES 💾</Text>
+                                <Text style={styles.bulletText}>• When you’re done editing, don’t forget to tap SAVE in the top right corner</Text>
+                            </View>
+
+                            <View style={styles.instructionStep}>
+                                <Text style={styles.stepTitle}>5. RATE, PLAY & ENJOY 🍿</Text>
+                                <Text style={styles.bulletText}>• Start rating movies right away</Text>
+                                <Text style={styles.bulletText}>• Use Search to find movies to rate</Text>
+                                <Text style={styles.bulletText}>• Play Friendzy, the movie match game that helps you and your friends decide what to watch</Text>
+                                <Text style={styles.bulletText}>• Explore What’s Streaming to see where movies are currently available</Text>
+                                <Text style={[styles.bulletText, { fontSize: 11, fontStyle: 'italic' }]}>(Note: streaming happens on external apps — this feature helps you decide what to watch)</Text>
+                                <Text style={styles.bulletText}>• Join the conversation on Reelz and share your thoughts on what you’re watching</Text>
+                            </View>
+                        </ScrollView>
+
+                        <TouchableOpacity style={styles.dismissButton} onPress={handleDismissIntro}>
+                            <Text style={styles.dismissButtonText}>Never see again</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
             <ScrollView>
                 {/* --- DASHBOARD HEADER (Side-by-Side) --- */}
                 <View style={styles.headerContainer}>
@@ -272,7 +354,7 @@ const HomeScreen = () => {
                                 <TouchableOpacity
                                     key={movie.id}
                                     style={styles.top8Item}
-                                    onPress={() => navigation.navigate('MovieDetails', { movieId: movie.id })}
+                                    onPress={() => navigation.navigate('MovieDetails', { movieId: movie.id, movie: movie })}
                                 >
                                     <Image
                                         source={{ uri: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }}
@@ -567,6 +649,72 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         fontFamily: 'Trebuchet MS', // Consistent font
         textAlign: 'center'
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        justifyContent: 'center',
+        padding: 20
+    },
+    modalContent: {
+        backgroundColor: '#1a1a2e',
+        borderRadius: 20,
+        maxHeight: '90%',
+        padding: 20,
+        borderWidth: 1,
+        borderColor: '#ff8c00'
+    },
+    modalScroll: {
+        paddingBottom: 20
+    },
+    modalTitle: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#ff8c00',
+        textAlign: 'center',
+        marginBottom: 5
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        color: '#ccc',
+        textAlign: 'center',
+        marginBottom: 20,
+        fontStyle: 'italic'
+    },
+    instructionStep: {
+        marginBottom: 20
+    },
+    stepTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#fff',
+        marginBottom: 8,
+        textTransform: 'uppercase'
+    },
+    stepText: {
+        fontSize: 14,
+        color: '#aaa',
+        marginBottom: 4,
+        paddingLeft: 10
+    },
+    bulletText: {
+        fontSize: 13,
+        color: '#888',
+        paddingLeft: 25,
+        marginBottom: 2
+    },
+    dismissButton: {
+        backgroundColor: '#ff8c00',
+        padding: 15,
+        borderRadius: 10,
+        alignItems: 'center',
+        marginTop: 10
+    },
+    dismissButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 16
     }
 });
 

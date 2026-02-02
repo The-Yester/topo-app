@@ -228,7 +228,13 @@ const AwardsHubScreen = () => {
     };
 
     const navigateToMovie = (nominee) => {
-        navigation.push('MovieDetails', { movieId: nominee.tmdbId });
+        const movieObj = {
+            id: nominee.tmdbId,
+            title: nominee.title || nominee.name, // Use title if available, otherwise name (risky but better than nothing)
+            poster_path: nominee.poster_path,
+            release_date: "" // Awards Hub might not have release date handy, but that's ok
+        };
+        navigation.push('MovieDetails', { movieId: nominee.tmdbId, movie: movieObj });
     };
 
     if (loading) {

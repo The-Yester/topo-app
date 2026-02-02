@@ -93,7 +93,7 @@ const SearchScreen = () => {
             return (
                 <TouchableOpacity
                     style={styles.resultItem}
-                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                    onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
                 >
                     <Image
                         source={item.poster_path ? { uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` } : require('../assets/TOPO_Logo.jpg')} // Fallback if needed

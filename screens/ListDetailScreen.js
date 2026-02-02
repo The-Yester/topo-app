@@ -68,7 +68,7 @@ const ListDetailScreen = ({ route }) => {
   }, [moviesInList, sortBy]);
 
   const handleItemPress = (item) => {
-    navigation.navigate('MovieDetails', { movieId: item.id, movieTitle: item.title });
+    navigation.navigate('MovieDetails', { movieId: item.id, movie: item });
   };
 
   const renderRightActions = (item) => {

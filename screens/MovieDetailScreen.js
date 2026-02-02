@@ -43,8 +43,8 @@ const MovieDetailScreen = ({ route }) => {
     const navigation = useNavigation();
     const { ratingMethod, addMovieToList, addToRecentlyWatched, addToRecentActivity, submitRating, movieLists, overallRatedMovies } = useContext(MoviesContext);
     const [userRating, setUserRating] = useState(0);
-    const { movieId } = route.params;
-    const [movie, setMovie] = useState(null);
+    const { movieId, movie: initialMovie } = route.params;
+    const [movie, setMovie] = useState(initialMovie || null);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
     const [reviewModalVisible, setReviewModalVisible] = useState(false);
     const [listModalVisible, setListModalVisible] = useState(false);
@@ -137,12 +137,19 @@ const MovieDetailScreen = ({ route }) => {
                 return;
             }
             try {
-                setLoading(true);
+                // Only show full loading if we have NO data. 
+                // If we have initial data, we settle for that while fetching fresh details silently (or with minor indicator)
+                if (!movie) {
+                    setLoading(true);
+                }
+
                 const movieData = await getMovieDetails(movieId);
-                setMovie(movieData);
+                // Merge initial data with fresh data to prevent flicker if fields are missing in fresh fetch temporarily
+                setMovie(prev => ({ ...prev, ...movieData }));
             } catch (error) {
                 console.error("Error fetching movie details:", error);
-                setMovie(null);
+                // If we have initial data, don't clear it on error, just log.
+                if (!movie) setMovie(null);
             } finally {
                 setLoading(false);
             }
@@ -415,7 +422,7 @@ const MovieDetailScreen = ({ route }) => {
         }
     };
 
-    if (loading) return <View style={styles.loadingContainer}><Text style={styles.loadingText}>Loading...</Text></View>;
+    if (loading && !movie) return <View style={styles.loadingContainer}><Text style={styles.loadingText}>Loading...</Text></View>;
     if (!movie) return <View style={styles.errorContainer}><Text style={styles.errorText}>Error: Movie not found or data is still loading.</Text></View>;
 
     const posterUrl = movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : 'https://via.placeholder.com/150';
@@ -428,6 +435,34 @@ const MovieDetailScreen = ({ route }) => {
             <View style={styles.detailsContainer}>
                 <Text style={styles.title}>{movie.title}</Text>
                 <Text style={styles.info}>{movie.release_date?.substring(0, 4)} | {movie.runtime} minutes</Text>
+
+                {/* Director & Cast Info */}
+                {movie.credits && (
+                    <View style={styles.creditsContainer}>
+                        {movie.credits.crew?.find(c => c.job === 'Director') && (
+                            <View style={styles.creditRow}>
+                                <Text style={styles.creditLabel}>Director: </Text>
+                                <TouchableOpacity onPress={() => navigation.push('ActorDetail', { personId: movie.credits.crew.find(c => c.job === 'Director').id })}>
+                                    <Text style={styles.creditName}>{movie.credits.crew.find(c => c.job === 'Director').name}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                        {movie.credits.cast?.length > 0 && (
+                            <View style={styles.creditRow}>
+                                <Text style={styles.creditLabel}>Starring: </Text>
+                                <View style={styles.castList}>
+                                    {movie.credits.cast.slice(0, 4).map((person, index) => (
+                                        <TouchableOpacity key={person.id} onPress={() => navigation.push('ActorDetail', { personId: person.id })}>
+                                            <Text style={styles.creditName}>
+                                                {person.name}{index < Math.min(movie.credits.cast.length, 4) - 1 ? ', ' : ''}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                        )}
+                    </View>
+                )}
                 <Text style={styles.plot}>{movie.overview}</Text>
 
                 <View style={styles.ratingsSectionContainer}>
@@ -1298,6 +1333,36 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    // Credits Styles
+    creditsContainer: {
+        marginTop: 15,
+        marginBottom: 5,
+        width: '100%',
+        paddingHorizontal: 5
+    },
+    creditRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginBottom: 6,
+        alignItems: 'center'
+    },
+    creditLabel: {
+        color: '#aaa',
+        fontWeight: 'bold',
+        fontSize: 14,
+        marginRight: 5
+    },
+    creditName: {
+        color: '#ff8c00',
+        fontSize: 14,
+        fontWeight: 'bold',
+        marginRight: 4
+    },
+    castList: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        flex: 1
     }
 });
 

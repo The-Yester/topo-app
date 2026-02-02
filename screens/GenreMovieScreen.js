@@ -61,7 +61,7 @@ const GenreMoviesScreen = () => {
                     renderItem={({ item }) => (
                         <TouchableOpacity
                             style={styles.movieItem}
-                            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id })}
+                            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
                         >
                             <Image
                                 source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
