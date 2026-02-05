@@ -2,7 +2,7 @@
   "expo": {
     "name": "TOPO",
     "slug": "topo",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "platforms": [
       "ios",
       "android"
@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ryester.topo",
-      "buildNumber": "8",
+      "buildNumber": "10",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -30,7 +30,7 @@
         "backgroundColor": "#23242f"
       },
       "package": "com.ryester.topo",
-      "versionCode": 2
+      "versionCode": 3
     },
     "extra": {
       "eas": {

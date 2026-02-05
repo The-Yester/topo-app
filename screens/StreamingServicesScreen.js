@@ -87,7 +87,7 @@ const StreamingServicesScreen = () => {
 
             {/* Movies Grid */}
             <View style={styles.moviesContainer}>
-                <Text style={styles.sectionTitle}>Popular on {selectedProvider.name}</Text>
+                <Text style={styles.sectionTitle}>Trending & New on {selectedProvider.name}</Text>
                 {loading ? (
                     <ActivityIndicator size="large" color="#FF8C00" style={{ marginTop: 50 }} />
                 ) : (

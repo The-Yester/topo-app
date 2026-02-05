@@ -67,12 +67,18 @@ export const getMoviesByGenre = async (genreId) => {
 // Note: Bypassing backend proxy for this specific call to ensure provider parameters are passed correctly without requiring a server redeploy.
 export const getMoviesByProvider = async (providerId) => {
   try {
+    // Calculate date 6 months ago to ensure "fresh" content
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const dateString = sixMonthsAgo.toISOString().split('T')[0];
+
     const response = await axios.get(`${TMDB_BASE_URL}/discover/movie`, {
       params: {
         api_key: TMDB_API_KEY,
         with_watch_providers: providerId,
         watch_region: 'US',
-        sort_by: 'popularity.desc'
+        sort_by: 'popularity.desc',
+        'primary_release_date.gte': dateString
       }
     });
     return response.data.results || [];

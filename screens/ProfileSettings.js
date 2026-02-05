@@ -31,6 +31,7 @@ const ProfileSettings = ({ navigation }) => {
     const { setRatingMethod } = useContext(MoviesContext);
 
     // User Data State
+    const [initialData, setInitialData] = useState(null);
     const [profilePhoto, setProfilePhoto] = useState(null);
     const [username, setUsername] = useState('');
     const [name, setName] = useState('');
@@ -74,6 +75,57 @@ const ProfileSettings = ({ navigation }) => {
             loadUserData();
         }
     }, [isFocused]);
+
+    // Unsaved Changes Listener
+    useEffect(() => {
+        const hasUnsavedChanges = () => {
+            if (!initialData) return false;
+
+            if (name !== initialData.name) return true;
+            if (username !== initialData.username) return true;
+            if (bio !== initialData.bio) return true;
+            if (location !== initialData.location) return true;
+            if (selectedRatingSystem !== initialData.ratingSystem) return true;
+            if (notificationsEnabled !== initialData.notificationsEnabled) return true;
+            if (profilePhoto !== initialData.profilePhoto) return true;
+
+            // Deep compare arrays (IDs comparison)
+            const currentMovieIds = topMovies.map(m => m.id).join(',');
+            const initialMovieIds = (initialData.topMovies || []).map(m => m.id).join(',');
+            if (currentMovieIds !== initialMovieIds) return true;
+
+            const currentFriendIds = topFriends.map(f => f.uid).join(',');
+            const initialFriendIds = (initialData.topFriends || []).map(f => f.uid).join(',');
+            if (currentFriendIds !== initialFriendIds) return true;
+
+            return false;
+        };
+
+        const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+            if (isSaving) return;
+
+            if (!hasUnsavedChanges()) {
+                return;
+            }
+
+            e.preventDefault();
+
+            Alert.alert(
+                'Unsaved Changes',
+                'You have unsaved changes. Are you sure you want to discard them and leave?',
+                [
+                    { text: "Don't Leave", style: 'cancel', onPress: () => { } },
+                    {
+                        text: 'Discard',
+                        style: 'destructive',
+                        onPress: () => navigation.dispatch(e.data.action),
+                    },
+                ]
+            );
+        });
+
+        return unsubscribe;
+    }, [navigation, initialData, name, username, bio, location, selectedRatingSystem, notificationsEnabled, profilePhoto, topMovies, topFriends, isSaving]);
 
     const handleNotificationToggle = async (value) => {
         setNotificationsEnabled(value);
@@ -185,6 +237,19 @@ const ProfileSettings = ({ navigation }) => {
                 setRatingMethod(data.ratingSystem || 'awards');
 
                 setNotificationsEnabled(data.notificationsEnabled || false);
+
+                // Set Initial Data for Unsaved Changes Check
+                setInitialData({
+                    name: data.name || '',
+                    username: data.username || '',
+                    bio: data.bio || '',
+                    location: data.location || US_CITIES[0],
+                    ratingSystem: data.ratingSystem || 'awards',
+                    notificationsEnabled: data.notificationsEnabled || false,
+                    profilePhoto: data.profilePhoto || null,
+                    topMovies: movies,
+                    topFriends: data.topFriends || []
+                });
             }
         } catch (error) {
             console.error("Error loading profile:", error);
@@ -245,7 +310,21 @@ const ProfileSettings = ({ navigation }) => {
                 topMovies: topMovies,
                 topFriends: topFriends, // Save Top 4 selection
                 username_lowercase: username.toLowerCase(),
-                name_lowercase: name.toLowerCase()
+                name_lowercase: name.toLowerCase(),
+                notificationsEnabled: notificationsEnabled // Ensure this is saved
+            });
+
+            // Update initial data to prevent prompt
+            setInitialData({
+                name,
+                username,
+                bio,
+                location,
+                ratingSystem: selectedRatingSystem,
+                notificationsEnabled,
+                profilePhoto: finalPhotoUrl,
+                topMovies,
+                topFriends
             });
 
             setRatingMethod(selectedRatingSystem);
@@ -679,7 +758,7 @@ const ProfileSettings = ({ navigation }) => {
                     {/* App Version */}
                     <View style={styles.aboutRow}>
                         <Text style={styles.aboutText}>App Version</Text>
-                        <Text style={[styles.aboutText, { color: '#888' }]}>1.0.0</Text>
+                        <Text style={[styles.aboutText, { color: '#888' }]}>1.0.2</Text>
                     </View>
 
                     {/* Terms of Service */}
