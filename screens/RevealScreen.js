@@ -26,20 +26,30 @@ const RevealScreen = ({ route, navigation }) => {
                 const allVotes = data.votes || {}; // { uid: { movieId: score } }
 
                 // Calculate Averages
+                // Calculate Averages
+                const participantIds = data.participants || [];
+                const totalParticipants = participantIds.length;
+
                 const scores = matchedMovies.map(movie => {
                     let totalScore = 0;
-                    let voteCount = 0;
 
-                    Object.values(allVotes).forEach(userVotes => {
-                        if (userVotes[movie.id]) {
-                            totalScore += userVotes[movie.id];
-                            voteCount++;
+                    // Iterate over ALL participants to ensure missing votes count as 0
+                    participantIds.forEach(uid => {
+                        const userVotes = allVotes[uid] || {};
+                        const vote = userVotes[movie.id];
+
+                        // Only positive votes contribute. Missing or -1 (Skip) are 0.
+                        if (vote && vote > 0) {
+                            totalScore += vote;
                         }
                     });
 
+                    // Average is based on Total Participants, enforcing consensus
+                    const average = totalParticipants > 0 ? (totalScore / totalParticipants).toFixed(1) : 0;
+
                     return {
                         ...movie,
-                        averageScore: voteCount > 0 ? (totalScore / voteCount).toFixed(1) : 0,
+                        averageScore: average,
                         totalScore
                     };
                 });

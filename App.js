@@ -30,8 +30,10 @@ import RevealScreen from './screens/RevealScreen';
 import PublicProfileScreen from './screens/PublicProfileScreen';
 import AwardsHubScreen from './screens/AwardsHubScreen';
 import AdminAwardsScreen from './screens/AdminAwardsScreen';
+import UserAwardsScreen from './screens/UserAwardsScreen';
 import RatingInstructionsScreen from './screens/RatingInstructionsScreen';
 import ActorDetailScreen from './screens/ActorDetailScreen';
+import TheaterTripScreen from './screens/TheaterTripScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -139,6 +141,7 @@ function AppNavigator() {
                     <Stack.Screen name="NowPlaying" component={NowPlayingScreen} />
                     <Stack.Screen name="NewStreaming" component={NewStreamingScreen} />
                     <Stack.Screen name="MovieDetails" component={MovieDetailScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="UserAwards" component={UserAwardsScreen} options={{ headerShown: false }} />
 
                     {/* Matched Movie Stack Screens */}
                     <Stack.Screen name="ConnectionDetail" component={ConnectionDetailScreen} options={{ headerShown: false }} />
@@ -147,6 +150,7 @@ function AppNavigator() {
                     <Stack.Screen name="FollowList" component={FollowListScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="RatingInstructions" component={RatingInstructionsScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="ActorDetail" component={ActorDetailScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="TheaterTrip" component={TheaterTripScreen} options={{ headerShown: false }} />
                 </Stack.Navigator>
             </NavigationContainer>
         </MoviesProvider>

@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, runTransaction, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, runTransaction, collection, getDocs, increment } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
+import { verifyTheaterLocation } from '../services/LocationService';
 
 // Define a constant for the special list ID
 export const OVERALL_RATINGS_LIST_ID = 'overall_ratings_list_id';
@@ -22,6 +23,7 @@ export const MoviesContext = createContext({
     addToRecentlyWatched: () => { },
     addToRecentActivity: () => { },
     updateOverallRatings: () => { },
+    mintTicketStub: async () => { },
 });
 
 export const MoviesProvider = ({ children }) => {
@@ -110,8 +112,12 @@ export const MoviesProvider = ({ children }) => {
                     // If array is empty/missing, attempt to backfill from subcollection
                     await fetchUserRatings(uid);
                 }
-                if (data.recentlyWatched) setRecentlyWatched(data.recentlyWatched);
-                if (data.recentActivity) setRecentActivity(data.recentActivity);
+                if (data.recentlyWatched) {
+                    setRecentlyWatched(data.recentlyWatched.slice(0, 10)); // Force constraint safely
+                }
+                if (data.recentActivity) {
+                    setRecentActivity(data.recentActivity.slice(0, 20)); // Force constraint safely
+                }
                 if (data.ratingMethod) setRatingMethod(data.ratingMethod);
             } else {
                 // Initialize default doc if not exists (migrating old users or fresh start)
@@ -145,6 +151,75 @@ export const MoviesProvider = ({ children }) => {
         await saveData('ratingMethod', method);
     };
 
+    const mintTicketStub = async (movie) => {
+        if (!user) return { success: false, error: 'You must be logged in to collect a ticket stub.' };
+
+        // 1. Verify Location using Geofencing
+        const locationResult = await verifyTheaterLocation();
+        if (!locationResult.success) {
+            return locationResult; // Propagates the exact security error back to the UI
+        }
+
+        const theaterName = locationResult.theaterName;
+
+        // 2. Determine Rarity Tier
+        let rarityTier = 'Silver'; // Classic standard stub
+        let pointsEarned = 10;
+        
+        if (movie.release_date) {
+            const releaseDate = new Date(movie.release_date);
+            const todayDate = new Date();
+            
+            // Normalize time mathematically for day comparison
+            releaseDate.setHours(0, 0, 0, 0);
+            todayDate.setHours(0, 0, 0, 0);
+
+            const diffTime = todayDate.getTime() - releaseDate.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+            // Allow slightly negative diffDays for Thursday previews
+            if (diffDays >= -2 && diffDays <= 1) {
+                // Opening Night / Previews
+                rarityTier = 'Holographic';
+                pointsEarned = 50;
+            } else if (diffDays > 1 && diffDays <= 4) {
+                // Opening Weekend
+                rarityTier = 'Gold';
+                pointsEarned = 30;
+            }
+        }
+
+        try {
+            // 3. Mint the Stub in Firestore 'ticketWallet'
+            const stubId = `stub_${movie.id}_${Date.now()}`;
+            const stubRef = doc(db, "users", user.uid, "ticketWallet", stubId);
+            
+            const stubData = {
+                id: stubId,
+                movieId: movie.id,
+                movieTitle: movie.title || 'Unknown Title',
+                poster_path: movie.poster_path || null,
+                theaterName: theaterName,
+                mintDate: new Date().toISOString(),
+                rarityTier: rarityTier,
+                pointsEarned: pointsEarned
+            };
+
+            await setDoc(stubRef, stubData);
+
+            // 4. Safely increment the user's Total Theater Points for the Leaderboard
+            const userDocRef = doc(db, "users", user.uid);
+            await updateDoc(userDocRef, {
+                theaterPoints: increment(pointsEarned)
+            });
+
+            return { success: true, stubData };
+        } catch (error) {
+            console.error("Error minting stub:", error);
+            return { success: false, error: 'Database minting failed. Please try again.' };
+        }
+    };
+
     const addList = async (newList) => {
         const updatedLists = [...movieLists, newList];
         setMovieLists(updatedLists);
@@ -165,9 +240,31 @@ export const MoviesProvider = ({ children }) => {
         return list ? list.movies : [];
     };
 
+    // Strip heavy payload data (e.g. cast/crew/videos) to avoid hitting 1MB Firebase document limit
+    const sanitizeMovieData = (m) => ({
+        id: m.id,
+        title: m.title || 'Unknown Title',
+        poster_path: m.poster_path || null,
+        release_date: m.release_date || null,
+        vote_average: m.vote_average || 0,
+        userOverallRating: m.userOverallRating || null,
+        userRating: m.userRating || null,
+        ratingMethod: m.ratingMethod || null,
+        awardsFilter: m.awardsFilter || null
+    });
+
     const addMovieToList = async (listId, movie) => {
+        const cleanMovie = sanitizeMovieData(movie);
+        
+        // Enforce 100 movie limit per list to prevent Firestore 1MB document limit exhaustion
+        const targetList = movieLists.find(l => l.id === listId);
+        if (targetList && targetList.movies.length >= 100 && !targetList.movies.some(m => m.id === movie.id)) {
+            Alert.alert("List Full", `The list "${targetList.name}" has reached its maximum capacity of 100 movies. Please remove some movies before adding more.`);
+            return;
+        }
+
         const updatedLists = movieLists.map(list =>
-            list.id === listId ? { ...list, movies: [...list.movies.filter(m => m.id !== movie.id), movie] } : list
+            list.id === listId ? { ...list, movies: [...list.movies.filter(m => m.id !== movie.id), cleanMovie] } : list
         );
         setMovieLists(updatedLists);
         await saveData('movieLists', updatedLists);
@@ -182,18 +279,20 @@ export const MoviesProvider = ({ children }) => {
     };
 
     const addToRecentlyWatched = async (movie) => {
+        const cleanMovie = sanitizeMovieData(movie);
         setRecentlyWatched(prev => {
             const filteredList = prev.filter(m => m.id !== movie.id);
-            const updatedList = [movie, ...filteredList].slice(0, 10);
+            const updatedList = [cleanMovie, ...filteredList].slice(0, 10);
             saveData('recentlyWatched', updatedList);
             return updatedList;
         });
     };
 
     const addToRecentActivity = async (movie) => {
+        const cleanMovie = sanitizeMovieData(movie);
         setRecentActivity(prev => {
             const filteredList = prev.filter(m => m.id !== movie.id);
-            const updatedList = [movie, ...filteredList].slice(0, 20); // Keep last 20 activities
+            const updatedList = [cleanMovie, ...filteredList].slice(0, 20); // Keep last 20 activities
             saveData('recentActivity', updatedList);
             return updatedList;
         });
@@ -347,7 +446,8 @@ export const MoviesProvider = ({ children }) => {
         addToRecentlyWatched,
         addToRecentActivity,
         updateOverallRatings,
-    }), [movieLists, overallRatedMovies, recentlyWatched, recentActivity, ratingMethod]);
+        mintTicketStub
+    }), [user, movieLists, overallRatedMovies, recentlyWatched, recentActivity, ratingMethod]);
 
     return (
         <MoviesContext.Provider value={value}>

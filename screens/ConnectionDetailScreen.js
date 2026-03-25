@@ -627,7 +627,7 @@ const ConnectionDetailScreen = ({ route, navigation }) => {
                             1. <Text style={{ fontWeight: 'bold', color: '#fff' }}>Rate</Text> each movie 1-10 based on how much you want to watch it right now.{'\n'}
                             2. <Text style={{ fontWeight: 'bold', color: '#fff' }}>Skip</Text> movies you've already seen.{'\n'}
                             3. <Text style={{ fontWeight: 'bold', color: '#fff' }}>Search</Text> to instantly add and rate a specific movie you have in mind.{'\n'}
-                            4. Matches are found when everyone rates highly!
+                            4. Matches are found based on **Group Consensus**. Missing votes count as 0!
                         </Text>
                         <TouchableOpacity style={styles.submitButton} onPress={() => setShowInstructions(false)}>
                             <Text style={styles.submitButtonText}>Let's Go!</Text>

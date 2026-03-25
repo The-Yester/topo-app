@@ -2,12 +2,12 @@
   "expo": {
     "name": "TOPO",
     "slug": "topo",
-    "version": "1.0.2",
+    "version": "2.0.0",
     "platforms": [
       "ios",
       "android"
     ],
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/fixed-icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
@@ -19,9 +19,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ryester.topo",
-      "buildNumber": "10",
+      "buildNumber": "20",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "TOPO requires your location to verify when you are at a movie theater to unlock exclusive Digital Ticket Stubs."
       }
     },
     "android": {
@@ -29,8 +30,12 @@
         "foregroundImage": "./assets/fixed-icon.png",
         "backgroundColor": "#23242f"
       },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "package": "com.ryester.topo",
-      "versionCode": 3
+      "versionCode": 10
     },
     "extra": {
       "eas": {

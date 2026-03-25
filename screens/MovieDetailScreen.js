@@ -15,12 +15,13 @@ import {
     StatusBar,
     SafeAreaView,
     KeyboardAvoidingView,
-    Animated // Added for Toast
+    Animated, // Added for Toast
+    Dimensions
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MoviesContext } from '../context/MoviesContext';
 import { getMovieDetails } from '../api/MovieService';
-import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
@@ -33,6 +34,8 @@ import ClassicRating from '../context/ClassicRating';
 import ThumbsRating from '../components/ThumbsRating';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import TicketStubCard from '../components/TicketStubCard';
+import { sendPushNotification, getUserPushToken } from '../services/NotificationService';
 
 const pizzaSliceFull = require('../assets/pizza_full.jpg');
 const pizzaSliceHalf = require('../assets/pizza_half.jpg');
@@ -41,14 +44,136 @@ const appBackground = require('../assets/TOPO_Background_3.4.png');
 
 const MovieDetailScreen = ({ route }) => {
     const navigation = useNavigation();
-    const { ratingMethod, addMovieToList, addToRecentlyWatched, addToRecentActivity, submitRating, movieLists, overallRatedMovies } = useContext(MoviesContext);
+    const { ratingMethod, addMovieToList, addToRecentlyWatched, addToRecentActivity, submitRating, movieLists, overallRatedMovies, mintTicketStub } = useContext(MoviesContext);
     const [userRating, setUserRating] = useState(0);
     const { movieId, movie: initialMovie } = route.params;
     const [movie, setMovie] = useState(initialMovie || null);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
     const [reviewModalVisible, setReviewModalVisible] = useState(false);
     const [listModalVisible, setListModalVisible] = useState(false);
-    const [isWatched, setIsWatched] = useState(false); // Default to FALSE so it's opt-in for "Recently Watched"
+    const [isWatched, setIsWatched] = useState(false); 
+
+    // Ticket Stub Minting State
+    const [isMinting, setIsMinting] = useState(false);
+    const [mintedStub, setMintedStub] = useState(null);
+
+    const isTheaterEligible = () => {
+        if (!movie || !movie.release_date) return false;
+        const releaseDate = new Date(movie.release_date);
+        const today = new Date();
+        const diffTime = today.getTime() - releaseDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays >= -2 && diffDays <= 60; // 60 day theatrical run
+    };
+
+    const handleMintTicket = async () => {
+        setIsMinting(true);
+        const result = await mintTicketStub(movie);
+        setIsMinting(false);
+
+        if (result.success) {
+            setMintedStub(result.stubData);
+            showToast("Successfully checked in!");
+        } else {
+            Alert.alert("Check-In Failed", result.error);
+        }
+    };
+
+    // Theater Trip Feature State
+    const [tripModalVisible, setTripModalVisible] = useState(false);
+    const [tripFriends, setTripFriends] = useState([]);
+    const [selectedFriendIds, setSelectedFriendIds] = useState([]);
+
+    const openTripModal = async () => {
+        if (!auth.currentUser) return Alert.alert("Login Required", "Please log in to plan a theater trip.");
+        setTripModalVisible(true);
+        try {
+            const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+            if (userDoc.exists()) {
+                const data = userDoc.data();
+                const friendMap = new Map();
+                (data.following || []).forEach(f => friendMap.set(f.uid, f));
+                (data.topFriends || []).forEach(f => friendMap.set(f.uid, f)); // Merge deduplicated
+                
+                const friendList = Array.from(friendMap.values());
+                const fetchPromises = friendList.map(async (friend) => {
+                    try {
+                        const fDoc = await getDoc(doc(db, "users", friend.uid));
+                        if (fDoc.exists()) {
+                            return {
+                                uid: friend.uid,
+                                username: fDoc.data().username || friend.username,
+                                profilePhoto: fDoc.data().profilePhoto || null,
+                            };
+                        }
+                    } catch (e) { console.error(e); }
+                    return friend; // fallback to cached data if read fails
+                });
+                
+                const liveFriends = await Promise.all(fetchPromises);
+                setTripFriends(liveFriends);
+            }
+        } catch (e) {
+            console.error("Error fetching friends for trip", e);
+        }
+    };
+
+    const toggleFriendSelection = (uid) => {
+        setSelectedFriendIds(prev =>
+            prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]
+        );
+    };
+
+    const handleSendTripInvites = async () => {
+        if (selectedFriendIds.length === 0) return Alert.alert("Wait!", "Select at least one friend to ping.");
+        if (!auth.currentUser) return;
+
+        try {
+            const tripId = `trip_${movieId}_${Date.now()}`;
+            const tripRef = doc(db, "theaterTrips", tripId);
+            const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+            const username = userDoc.exists() ? userDoc.data().username : "Someone";
+
+            const rsvps = { [auth.currentUser.uid]: 'in' };
+            selectedFriendIds.forEach(id => rsvps[id] = 'pending');
+
+            const allMembers = [auth.currentUser.uid, ...selectedFriendIds];
+
+            await setDoc(tripRef, {
+                tripId,
+                movieId: movieId.toString(),
+                movieTitle: movie?.title || "Unknown Movie",
+                poster_path: movie?.poster_path || null,
+                creatorUid: auth.currentUser.uid,
+                creatorUsername: username,
+                invitedUids: allMembers,
+                rsvps: rsvps,
+                createdAt: new Date().toISOString()
+            });
+
+            // Trigger Push Notifications
+            const title = "🍿 Theater Trip Alert!";
+            const body = `${username} wants to see ${movie?.title || 'a movie'} in theaters. Are you in?`;
+            
+            for (const friendUid of selectedFriendIds) {
+                const token = await getUserPushToken(friendUid);
+                if (token) {
+                    await sendPushNotification(token, title, body, { screen: 'TheaterTrip', tripId });
+                }
+            }
+            
+            setTripModalVisible(false);
+            setSelectedFriendIds([]);
+            showToast("Theater Trip invites sent! 🍿");
+
+            // Navigate the creator into the newly minted Group Chat
+            navigation.navigate("TheaterTrip", { tripId });
+
+        } catch (e) {
+            console.error("Error minting trip:", e);
+            Alert.alert("Error", "Could not create the Theater Trip.");
+        }
+    };
 
     // Share Feature State
     const [shareModalVisible, setShareModalVisible] = useState(false);
@@ -86,6 +211,8 @@ const MovieDetailScreen = ({ route }) => {
     // Rating State
     const [detailedAwardsRatings, setDetailedAwardsRatings] = useState({});
     const [currentAwardsOverallScore, setCurrentAwardsOverallScore] = useState(null);
+    const [activeAwardsFilter, setActiveAwardsFilter] = useState('Movie');
+    const [instructionsModalVisible, setInstructionsModalVisible] = useState(false);
 
     // Unified Share Handler
     const handleShareOptions = () => {
@@ -98,7 +225,11 @@ const MovieDetailScreen = ({ route }) => {
                     text: "Post to Reelz",
                     onPress: () => {
                         const text = `Just watched ${movie?.title}! 🎬 My Rating: ${userRating > 0 ? (ratingMethod === 'Percentage' ? `${userRating}%` : `${userRating}/${maxRating}`) : 'N/A'} #TOPO`;
-                        navigation.navigate('MessageBoard', { initialText: text });
+                        const posterUrl = movie?.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null;
+                        navigation.navigate('MainTabs', {
+                            screen: 'Message Board',
+                            params: { initialText: text, initialPosterUrl: posterUrl }
+                        });
                     }
                 },
                 {
@@ -214,20 +345,28 @@ const MovieDetailScreen = ({ route }) => {
                         const convertedScore = convertRating(data.score, data.type, ratingMethod);
                         setUserRating(convertedScore || 0);
 
-                        if (data.type === 'Awards' && data.breakdown) {
-                            setDetailedAwardsRatings(data.breakdown);
+                        if (data.type && data.type.toLowerCase() === 'awards' && data.breakdown) {
+                            const breakdownData = { ...data.breakdown };
+                            const savedFilter = breakdownData._filter || 'Movie';
+                            delete breakdownData._filter;
+
+                            setDetailedAwardsRatings(breakdownData);
+                            setActiveAwardsFilter(savedFilter);
+
                             // If we are currently in Awards mode, the convertRating returns the score as is, which is correct.
-                            if (ratingMethod === 'Awards') {
+                            if (ratingMethod && ratingMethod.toLowerCase() === 'awards') {
                                 setCurrentAwardsOverallScore(convertedScore);
                             }
                         } else {
                             // If converting FROM another type TO Awards, we don't have a breakdown.
                             setDetailedAwardsRatings({});
-                            setCurrentAwardsOverallScore(ratingMethod === 'Awards' ? convertedScore : null);
+                            setActiveAwardsFilter('Movie');
+                            setCurrentAwardsOverallScore(ratingMethod && ratingMethod.toLowerCase() === 'awards' ? convertedScore : null);
                         }
                     } else {
                         setUserRating(0);
                         setDetailedAwardsRatings({});
+                        setActiveAwardsFilter('Movie');
                         setCurrentAwardsOverallScore(null);
                     }
                 });
@@ -369,9 +508,10 @@ const MovieDetailScreen = ({ route }) => {
         }
     };
 
-    const handleAwardsDataChange = React.useCallback((averageScore, detailedRatingsFromAwardsComponent) => {
+    const handleAwardsDataChange = React.useCallback((averageScore, detailedRatingsFromAwardsComponent, activeFilterValue) => {
         setCurrentAwardsOverallScore(averageScore);
         setDetailedAwardsRatings(detailedRatingsFromAwardsComponent);
+        if (activeFilterValue) setActiveAwardsFilter(activeFilterValue);
     }, []);
 
     const handleFinalAwardsSubmit = async () => {
@@ -395,7 +535,8 @@ const MovieDetailScreen = ({ route }) => {
                 release_date: movie.release_date // Critical for sorting!
             };
 
-            await submitRating(movieId, 'Awards', overallAwardsScoreToSave, detailedAwardsRatings, movieInfoForContext);
+            const breakdownToSave = { ...detailedAwardsRatings, _filter: activeAwardsFilter };
+            await submitRating(movieId, 'Awards', overallAwardsScoreToSave, breakdownToSave, movieInfoForContext);
 
             if (movie) {
                 const activityItem = {
@@ -403,7 +544,8 @@ const MovieDetailScreen = ({ route }) => {
                     title: movie.title,
                     poster_path: movie.poster_path,
                     userRating: overallAwardsScoreToSave,
-                    ratingMethod: 'Awards'
+                    ratingMethod: 'Awards',
+                    awardsFilter: activeAwardsFilter
                 };
 
                 if (isWatched) {
@@ -548,6 +690,28 @@ const MovieDetailScreen = ({ route }) => {
                 </View>
 
                 <View style={styles.buttonGrid}>
+                    {/* Theatrical Check-In & Plan Trip Buttons (Dynamic) */}
+                    {isTheaterEligible() && (
+                        <>
+                            <TouchableOpacity 
+                                style={[styles.gridButton, { backgroundColor: '#1E90FF', width: '100%', marginBottom: 10 }]} 
+                                onPress={handleMintTicket}
+                                disabled={isMinting}
+                            >
+                                <Icon name="ticket" size={16} color="white" style={{ marginRight: 8 }} />
+                                <Text style={styles.gridButtonText}>{isMinting ? "Verifying GPS..." : "I'm at the Theater"}</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[styles.gridButton, { backgroundColor: '#FFD700', width: '100%', marginBottom: 10 }]} 
+                                onPress={openTripModal}
+                            >
+                                <Icon name="users" size={16} color="#000" style={{ marginRight: 8 }} />
+                                <Text style={[styles.gridButtonText, { color: '#000' }]}>Plan a Theater Trip</Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
+                    
                     {/* Row 1 */}
                     <TouchableOpacity style={[styles.gridButton, { backgroundColor: '#e50914' }]} onPress={() => setRatingModalVisible(true)}>
                         <Icon name="star" size={16} color="white" style={{ marginRight: 8 }} />
@@ -669,10 +833,42 @@ const MovieDetailScreen = ({ route }) => {
                 </View>
             </Modal>
 
-            <Modal animationType="slide" transparent={true} visible={ratingModalVisible} onRequestClose={() => setRatingModalVisible(false)}>
+            {/* Instructions Modal */}
+            <Modal animationType="fade" transparent={true} visible={instructionsModalVisible} onRequestClose={() => setInstructionsModalVisible(false)}>
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Rate {movie?.title}</Text>
+                        <Text style={styles.modalTitle}>How to Rate & Log 🍿</Text>
+                        
+                        <View style={{ marginVertical: 10, paddingHorizontal: 5 }}>
+                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>1. Quick Rate ⭐️</Text>
+                            <Text style={{ color: '#ccc', fontSize: 14, marginBottom: 15 }}>
+                                If you just want to Rate a movie, select your score and tap <Text style={{fontWeight: 'bold', color: '#ff8c00'}}>Submit</Text>. It will automatically be added to your Recently Rated list.
+                            </Text>
+
+                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>2. Log as Watched 🎬</Text>
+                            <Text style={{ color: '#ccc', fontSize: 14 }}>
+                                If you recently watched the movie, tap the <Text style={{fontWeight: 'bold', color: '#00FFFF'}}>Press to add to Recently Watched</Text> button first (do not hit Cancel), and THEN tap <Text style={{fontWeight: 'bold', color: '#ff8c00'}}>Submit</Text>.
+                                {"\n\n"}This separates your movies on your home screen, showing what you've just rated vs what you just watched and rated!
+                            </Text>
+                        </View>
+
+                        <View style={styles.modalButtonSeparator} />
+                        <TouchableOpacity style={styles.modalSubmitButton} onPress={() => setInstructionsModalVisible(false)}>
+                            <Text style={styles.modalSubmitButtonText}>Got it!</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal animationType="slide" transparent={true} visible={ratingModalVisible} onRequestClose={() => setRatingModalVisible(false)}>
+                <View style={styles.modalContainer}>
+                    <View style={[styles.modalContent, { maxHeight: Dimensions.get('window').height * 0.85 }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+                            <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Rate {movie?.title}</Text>
+                            <TouchableOpacity onPress={() => setInstructionsModalVisible(true)} style={{ marginLeft: 10 }}>
+                                <Icon name="info-circle" size={20} color="#ff8c00" />
+                            </TouchableOpacity>
+                        </View>
 
                         {ratingMethod === '1-5' && (
                             <PizzaRating
@@ -682,10 +878,14 @@ const MovieDetailScreen = ({ route }) => {
                         )}
 
                         {ratingMethod === '1-10' && (
-                            <ClassicRating
-                                initialRating={userRating}
-                                onSubmitRating={(rating) => handleRatingSubmit(rating)}
-                            />
+                            <View style={{ maxHeight: Dimensions.get('window').height * 0.65, width: '100%' }}>
+                                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, paddingBottom: 10 }}>
+                                    <ClassicRating
+                                        initialRating={userRating}
+                                        onSubmitRating={(rating) => handleRatingSubmit(rating)}
+                                    />
+                                </ScrollView>
+                            </View>
                         )}
 
                         {ratingMethod === 'Percentage' && (
@@ -698,18 +898,67 @@ const MovieDetailScreen = ({ route }) => {
                         )}
 
                         {ratingMethod === 'Awards' && (
-                            <View style={styles.awardsRatingContainerInModal}>
+                            <View style={[styles.awardsRatingContainerInModal, { height: Dimensions.get('window').height * 0.65 }]}>
                                 <AwardsRating
                                     initialRatings={detailedAwardsRatings}
+                                    initialFilter={activeAwardsFilter}
                                     onChange={handleAwardsDataChange}
-                                />
-                                <Text style={styles.awardsOverallTextInModal}>
-                                    Overall Calculated: {currentAwardsOverallScore !== null ? `${currentAwardsOverallScore.toFixed(1)}/10` : 'N/A'}
-                                </Text>
-                                <View style={styles.modalButtonSeparator} />
-                                <TouchableOpacity style={styles.modalSubmitButton} onPress={handleFinalAwardsSubmit}>
-                                    <Text style={styles.modalSubmitButtonText}>Submit Awards Rating</Text>
-                                </TouchableOpacity>
+                                >
+                                    <View style={styles.awardsBottomSection}>
+                                        <Text style={styles.awardsOverallTextInModal}>
+                                            Overall Calculated: {currentAwardsOverallScore !== null ? `${currentAwardsOverallScore.toFixed(1)}/10` : 'N/A'}
+                                        </Text>
+                                        <TouchableOpacity style={styles.modalSubmitButton} onPress={handleFinalAwardsSubmit}>
+                                            <Text style={styles.modalSubmitButtonText}>Submit</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    {/* Action Buttons Row passed as children so it scrolls cleanly inside Awards module */}
+                                    <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', marginTop: 15 }}>
+                                        <TouchableOpacity
+                                            style={{
+                                                flex: 1,
+                                                marginRight: 5,
+                                                height: 50,
+                                                borderRadius: 25,
+                                                backgroundColor: isWatched ? '#333' : '#00FFFF',
+                                                flexDirection: 'row',
+                                                justifyContent: 'center',
+                                                alignItems: 'center',
+                                            }}
+                                            onPress={() => setIsWatched(!isWatched)}
+                                        >
+                                            <Text style={{ fontSize: 16, marginRight: 6 }}>{isWatched ? "✅" : "🎥"}</Text>
+                                            <Text
+                                                style={{
+                                                    fontSize: 12,
+                                                    color: isWatched ? '#FFF' : '#000',
+                                                    textAlign: 'center',
+                                                    fontWeight: 'bold',
+                                                    flexShrink: 1
+                                                }}
+                                                numberOfLines={2}
+                                                adjustsFontSizeToFit
+                                            >
+                                                {isWatched ? "Watched" : "Press to add to\nRecently Watched"}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={{
+                                                flex: 1,
+                                                marginLeft: 5,
+                                                height: 50,
+                                                borderRadius: 25,
+                                                backgroundColor: '#ff6347',
+                                                justifyContent: 'center',
+                                                alignItems: 'center',
+                                            }}
+                                            onPress={() => setRatingModalVisible(false)}
+                                        >
+                                            <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>Cancel</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </AwardsRating>
                             </View>
                         )}
 
@@ -728,44 +977,56 @@ const MovieDetailScreen = ({ route }) => {
                             </View>
                         )}
 
-                        {/* Watched Toggle (Custom Button Style) */}
-                        <TouchableOpacity
-                            style={[
-                                styles.modalSubmitButton,
-                                {
-                                    backgroundColor: isWatched ? '#333' : '#00FFFF',
-                                    flexDirection: 'row',
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    paddingVertical: 10,
-                                    width: '85%',
-                                    marginTop: 15
-                                }
-                            ]}
-                            onPress={() => setIsWatched(!isWatched)}
-                        >
-                            <Text style={{ fontSize: 16, marginRight: 8 }}>{isWatched ? "✅" : "🎥"}</Text>
-                            <Text
-                                style={[
-                                    styles.modalSubmitButtonText,
-                                    {
-                                        fontSize: 14,
-                                        color: isWatched ? '#FFF' : '#000',
-                                        textAlign: 'center',
-                                        flexShrink: 1
-                                    }
-                                ]}
-                                numberOfLines={1}
-                                adjustsFontSizeToFit
-                            >
-                                {isWatched ? "Added to Recently Watched" : "Press to add to Recently Watched"}
-                            </Text>
-                        </TouchableOpacity>
+                        {/* Action Buttons Row (Only render OUTSIDE if we are NOT using Awards, since Awards renders them inside its scrolling module) */}
+                        {ratingMethod !== 'Awards' && (
+                            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', marginTop: 15 }}>
+                                {/* Watched Toggle (Left) */}
+                                <TouchableOpacity
+                                    style={{
+                                        flex: 1,
+                                        marginRight: 5,
+                                        height: 50,
+                                        borderRadius: 25,
+                                        backgroundColor: isWatched ? '#333' : '#00FFFF',
+                                        flexDirection: 'row',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                    }}
+                                    onPress={() => setIsWatched(!isWatched)}
+                                >
+                                    <Text style={{ fontSize: 16, marginRight: 6 }}>{isWatched ? "✅" : "🎥"}</Text>
+                                    <Text
+                                        style={{
+                                            fontSize: 12,
+                                            color: isWatched ? '#FFF' : '#000',
+                                            textAlign: 'center',
+                                            fontWeight: 'bold',
+                                            flexShrink: 1
+                                        }}
+                                        numberOfLines={2}
+                                        adjustsFontSizeToFit
+                                    >
+                                        {isWatched ? "Watched" : "Press to add to\nRecently Watched"}
+                                    </Text>
+                                </TouchableOpacity>
 
-                        <View style={styles.modalButtonSeparator} />
-                        <TouchableOpacity style={[styles.modalSecondaryButton, { width: '80%', alignSelf: 'center' }]} onPress={() => setRatingModalVisible(false)}>
-                            <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-                        </TouchableOpacity>
+                                {/* Cancel Button (Right) */}
+                                <TouchableOpacity
+                                    style={{
+                                        flex: 1,
+                                        marginLeft: 5,
+                                        height: 50,
+                                        borderRadius: 25,
+                                        backgroundColor: '#ff6347',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                    }}
+                                    onPress={() => setRatingModalVisible(false)}
+                                >
+                                    <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>Cancel</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
                     </View>
                 </View>
             </Modal>
@@ -799,25 +1060,47 @@ const MovieDetailScreen = ({ route }) => {
                             <View style={{ justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
                                 {/* The Capture Container */}
                                 <View ref={viewShotRef} collapsable={false} style={styles.shareCard}>
-                                    <Image source={{ uri: posterUrl }} style={styles.shareBackground} resizeMode="cover" blurRadius={20} />
-                                    <View style={styles.shareOverlay} />
+                                    <Image source={{ uri: posterUrl }} style={styles.shareBackground} resizeMode="cover" blurRadius={30} />
+                                    <View style={styles.shareOverlayDarken} />
 
-                                    <View style={styles.shareHeader}>
-                                        <Image source={topoLogo} style={styles.shareLogo} resizeMode="contain" />
-                                    </View>
+                                    <View style={styles.shareCentralContent}>
+                                        <Text style={styles.shareMovieTitleTop} numberOfLines={2}>
+                                            {movie?.title}
+                                        </Text>
 
-                                    <View style={styles.shareBody}>
-                                        <Image source={{ uri: posterUrl }} style={styles.sharePoster} resizeMode="cover" />
-                                        <View style={styles.shareTextContainer}>
-                                            <Text style={styles.shareUserText}>I just rated</Text>
-                                            <Text style={styles.shareMovieTitle}>{movie?.title}</Text>
-                                            <Text style={styles.shareUserRating}>
-                                                {userRating > 0 ? (ratingMethod === 'Percentage' ? `${userRating}%` : `${userRating}/${maxRating}`) : "Highly Rated"}
-                                            </Text>
-                                            <Text style={styles.shareOnText}>on TOPO</Text>
+                                        <Image source={{ uri: posterUrl }} style={styles.sharePosterCentered} resizeMode="cover" />
+
+                                        <Text style={styles.shareDirectorText}>
+                                            Directed by: {movie?.credits?.crew?.find(c => c.job === 'Director')?.name || 'Unknown'} • {movie?.release_date ? movie.release_date.substring(0, 4) : ''}
+                                        </Text>
+
+                                        <View style={styles.shareRatingRow}>
+                                            {userRating > 0 && (
+                                                <View style={styles.shareEmojiIcon}>
+                                                    {ratingMethod === 'Percentage' && <Icon name="percent" size={24} color="#4CAF50" />}
+                                                    {(ratingMethod === '1-10' || ratingMethod === 'Classic') && <Icon name="star" size={24} color="#FFC107" />}
+                                                    {(ratingMethod === '1-5' || ratingMethod === 'Pizza') && <MaterialIcon name="pizza" size={24} color="#FF5722" />}
+                                                    {ratingMethod === 'Awards' && <Icon name="trophy" size={24} color="#FFD700" />}
+                                                    {ratingMethod === 'Thumbs' && <MaterialIcon name="thumb-up" size={24} color="#4CAF50" />}
+                                                </View>
+                                            )}
+
+                                            <View style={styles.shareBadgePillGlass}>
+                                                <Text style={styles.shareBadgeTextOrange}>
+                                                    {userRating > 0 ? (ratingMethod === 'Percentage' ? `${userRating}%` : `${userRating}/${maxRating}`) : "Highly Rated"}
+                                                </Text>
+                                            </View>
                                         </View>
                                     </View>
-                                    <Text style={styles.shareFooterText}>Download TOPO today!</Text>
+
+                                    <View style={styles.shareLogoContainer}>
+                                        <View style={styles.shareSeparatorRow}>
+                                            <View style={styles.shareSeparatorLine} />
+                                            <Text style={styles.shareSeparatorText}>on</Text>
+                                            <View style={styles.shareSeparatorLine} />
+                                        </View>
+                                        <Image source={topoLogo} style={styles.shareLogoBottomCentered} resizeMode="contain" />
+                                    </View>
                                 </View>
                             </View>
 
@@ -835,6 +1118,92 @@ const MovieDetailScreen = ({ route }) => {
                     </View>
                 </View>
             </Modal>
+
+            {/* Ticket Minting Success Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={!!mintedStub}
+                onRequestClose={() => setMintedStub(null)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.ratingModalContent, { alignItems: 'center', backgroundColor: '#111', padding: 25 }]}>
+                        <Text style={[styles.modalTitle, { color: '#FFD700', fontSize: 24, marginBottom: 5 }]}>Check-In Verified!</Text>
+                        <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
+                            You secured a {mintedStub?.rarityTier} stub at {mintedStub?.theaterName}.
+                        </Text>
+                        
+                        {mintedStub && <TicketStubCard stubData={mintedStub} />}
+
+                        <TouchableOpacity 
+                            style={[styles.modalButton, { backgroundColor: '#e50914', marginTop: 30, width: '80%' }]}
+                            onPress={() => setMintedStub(null)}
+                        >
+                            <Text style={styles.modalButtonText}>Add to Wallet</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Friendzy Theater Trip Invite Modal */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={tripModalVisible}
+                onRequestClose={() => setTripModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.ratingModalContent, { backgroundColor: '#222', maxHeight: '80%', padding: 20 }]}>
+                        <Text style={[styles.modalTitle, { color: '#FFD700', fontSize: 24, marginBottom: 5 }]}>Plan a Theater Trip</Text>
+                        <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 15, textAlign: 'center' }}>
+                            Select friends to push a Theater Notification to.
+                        </Text>
+                        
+                        <ScrollView style={{ width: '100%', marginBottom: 20 }}>
+                            {tripFriends.map(friend => {
+                                const isSelected = selectedFriendIds.includes(friend.uid);
+                                return (
+                                    <TouchableOpacity 
+                                        key={friend.uid} 
+                                        style={{
+                                            flexDirection: 'row', alignItems: 'center', padding: 12, 
+                                            borderRadius: 8, backgroundColor: isSelected ? 'rgba(255,215,0,0.2)' : '#333', 
+                                            marginBottom: 10, borderWidth: 1, borderColor: isSelected ? '#FFD700' : 'transparent'
+                                        }}
+                                        onPress={() => toggleFriendSelection(friend.uid)}
+                                    >
+                                        <Image 
+                                            source={friend.profilePhoto && friend.profilePhoto !== "null" && friend.profilePhoto !== "" ? { uri: friend.profilePhoto } : require('../assets/profile_placeholder.jpg')}
+                                            style={{ width: 40, height: 40, borderRadius: 20, marginRight: 15 }}
+                                        />
+                                        <Text style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 'bold' }}>{friend.username}</Text>
+                                        {isSelected && <Icon name="check-circle" size={24} color="#FFD700" />}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                            {tripFriends.length === 0 && (
+                                <Text style={{ color: '#aaa', textAlign: 'center', marginTop: 20 }}>No friends found. Follow some users first!</Text>
+                            )}
+                        </ScrollView>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+                            <TouchableOpacity 
+                                style={[styles.modalSecondaryButton, { flex: 1, marginRight: 10, backgroundColor: '#555' }]}
+                                onPress={() => setTripModalVisible(false)}
+                            >
+                                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.modalPrimaryButton, { flex: 1, marginLeft: 10, backgroundColor: '#FFD700' }]}
+                                onPress={handleSendTripInvites}
+                            >
+                                <Text style={[styles.modalPrimaryButtonText, { color: '#000' }]}>Send Invites</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Toast Notification */}
             <Animated.View style={[styles.toastContainer, { opacity: toastOpacity, transform: [{ translateY: toastOpacity.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) }] }]}>
                 <Text style={styles.toastText}>{toastMessage}</Text>
@@ -1115,7 +1484,7 @@ const styles = StyleSheet.create({
         padding: 25,
         backgroundColor: '#161625',
         borderRadius: 15,
-        alignItems: 'center',
+        alignItems: 'stretch', // ensures inner views take full width easily
         borderWidth: 1,
         borderColor: '#333',
     },
@@ -1151,8 +1520,14 @@ const styles = StyleSheet.create({
     },
     awardsRatingContainerInModal: {
         width: '100%',
-        height: 500, // Fixed height to allow scrolling
-        marginBottom: 10,
+        // Height injected inline dynamically
+    },
+    awardsBottomSection: {
+        paddingTop: 10,
+        paddingBottom: 5,
+        borderTopWidth: 1,
+        borderTopColor: '#333',
+        marginTop: 5,
     },
     awardsOverallTextInModal: {
         marginVertical: 15,
@@ -1183,96 +1558,121 @@ const styles = StyleSheet.create({
     },
     // Share Feature Styles
     shareCard: {
-        width: 300,
-        height: 500,
-        borderRadius: 20,
+        width: 320,
+        height: 568, // Approximate 9:16 aspect ratio base size
+        borderRadius: 16,
         overflow: 'hidden',
-        backgroundColor: '#000',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 30
+        backgroundColor: '#111',
     },
     shareBackground: {
         position: 'absolute',
         width: '100%',
         height: '100%',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        opacity: 0.8
+        opacity: 0.6,
     },
-    shareOverlay: {
+    shareOverlayDarken: {
         position: 'absolute',
         width: '100%',
         height: '100%',
-        backgroundColor: 'rgba(0,0,0,0.5)'
+        backgroundColor: 'rgba(0,0,0,0.5)',
     },
-    shareHeader: {
+    shareCentralContent: {
+        flex: 1,
         alignItems: 'center',
-        marginTop: 10
+        justifyContent: 'center',
+        paddingTop: 10,
+        paddingHorizontal: 20,
     },
-    shareLogo: {
-        width: 100,
-        height: 50,
-        borderRadius: 15,
-        opacity: 0.8,
-        // tintColor removed to show original logo colors
-    },
-    shareBody: {
-        alignItems: 'center',
-        width: '100%',
-        paddingHorizontal: 20
-    },
-    sharePoster: {
-        width: 160,
-        height: 240,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#fff',
-        marginBottom: 20,
-        elevation: 10
-    },
-    shareTextContainer: {
-        alignItems: 'center',
-    },
-    shareUserText: {
-        color: '#ccc',
-        fontSize: 14,
-        fontFamily: 'Trebuchet MS',
-        textTransform: 'uppercase',
-        letterSpacing: 2
-    },
-    shareMovieTitle: {
-        color: '#fff',
-        fontSize: 24,
+    shareMovieTitleTop: {
+        color: '#FF5722',
+        fontSize: 16, // Reduced font size by 2 more
         fontWeight: 'bold',
         textAlign: 'center',
-        marginVertical: 5,
-        fontFamily: 'Trebuchet MS',
-        textShadowColor: 'rgba(0, 0, 0, 0.75)',
-        textShadowOffset: { width: -1, height: 1 },
-        textShadowRadius: 10
+        marginBottom: 8, // Brought it down slightly (closer to poster)
+        marginTop: 35, // Added more top margin to push it lower from top edge
+        fontFamily: 'Arial', // Changed to Arial
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        textShadowColor: 'rgba(0, 0, 0, 0.8)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3
     },
-    shareUserRating: {
-        color: '#FF8C00', // Dark Orange / "Oranges Yellow" to match app theme
-        fontSize: 48,
-        fontWeight: '900',
-        textShadowColor: 'rgba(0, 0, 0, 0.9)',
-        textShadowOffset: { width: 2, height: 2 },
-        textShadowRadius: 5
+    sharePosterCentered: {
+        width: 220,
+        height: 330,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
+        marginBottom: 15, // Reduced to fit more text
+        elevation: 10,
     },
-    shareOnText: {
-        color: '#fff',
+    shareDirectorText: {
+        color: '#ccc',
         fontSize: 12,
-        marginTop: 5,
-        opacity: 0.8
+        fontFamily: 'Arial', // Changed to Arial
+        textAlign: 'center',
+        marginBottom: 12,
+        opacity: 0.9,
     },
-    shareFooterText: {
-        color: '#fff',
-        fontSize: 8,
-        opacity: 0.6,
-        letterSpacing: 1
+    shareRatingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10, // Added bottom margin to push the separator down
+    },
+    shareEmojiIcon: {
+        marginRight: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    shareBadgePillGlass: {
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+    },
+    shareBadgeTextOrange: {
+        color: '#FF5722',
+        fontWeight: '900',
+        fontSize: 22,
+        fontFamily: 'Arial', // Changed to Arial
+        letterSpacing: 1,
+    },
+    shareLogoContainer: {
+        alignItems: 'center',
+        paddingBottom: 25,
+        width: '100%',
+        paddingHorizontal: 40,
+        marginTop: 25, // Increased top margin to push it further from rating pill
+    },
+    shareSeparatorRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '100%',
+        marginBottom: 10,
+    },
+    shareSeparatorLine: {
+        flex: 1,
+        height: 2,
+        backgroundColor: '#FF5722',
+        borderRadius: 1,
+    },
+    shareSeparatorText: {
+        color: '#FF5722',
+        marginHorizontal: 10,
+        fontWeight: 'bold',
+        fontFamily: 'Arial', // Changed to Arial
+        textTransform: 'uppercase',
+        fontSize: 14,
+    },
+    shareLogoBottomCentered: {
+        width: 100,
+        height: 40,
+        opacity: 0.9,
     },
     // Toast Styles
     toastContainer: {

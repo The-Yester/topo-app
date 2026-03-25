@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, FlatList, ActivityIndicator, ImageBackground, Alert, Modal } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -9,6 +9,7 @@ import { sendPushNotification, getUserPushToken } from '../services/Notification
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MoviesContext } from '../context/MoviesContext';
+import TicketStubCard from '../components/TicketStubCard';
 
 const PublicProfileScreen = () => {
     const navigation = useNavigation();
@@ -25,6 +26,9 @@ const PublicProfileScreen = () => {
     const [likersModalVisible, setLikersModalVisible] = useState(false);
     const [likersList, setLikersList] = useState([]);
     const [loadingLikers, setLoadingLikers] = useState(false);
+
+    // Ticket Wallet State
+    const [ticketWallet, setTicketWallet] = useState([]);
 
     useEffect(() => {
         fetchProfile();
@@ -62,6 +66,18 @@ const PublicProfileScreen = () => {
                 }
 
                 setUserData(data);
+
+                // Fetch Ticket Wallet Stubs
+                try {
+                    const stubsRef = collection(db, "users", userId, "ticketWallet");
+                    const stubsSnap = await getDocs(stubsRef);
+                    const stubs = [];
+                    stubsSnap.forEach(stubDoc => stubs.push(stubDoc.data()));
+                    stubs.sort((a,b) => new Date(b.mintDate) - new Date(a.mintDate));
+                    setTicketWallet(stubs);
+                } catch(e) {
+                    console.log("Error fetching ticket wallet", e);
+                }
 
                 // Fetch fresh Top 4 data
                 if (data.topFriends && data.topFriends.length > 0) {
@@ -458,8 +474,25 @@ const PublicProfileScreen = () => {
                             <Text style={styles.statNumber}>{userData.followers?.length || 0}</Text>
                             <Text style={styles.statLabel}>Followers</Text>
                         </TouchableOpacity>
+                        <View style={styles.statSeparator} />
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{userData.theaterPoints || 0}</Text>
+                            <Text style={styles.statLabel}>Theater Pts</Text>
+                        </View>
                     </View>
                 </View>
+
+                <View style={styles.separator} />
+
+                {/* Awards Button */}
+                <TouchableOpacity 
+                    style={styles.awardsButton}
+                    onPress={() => navigation.navigate('UserAwards', { userId: userId, username: userData.username })}
+                >
+                    <Icon name="trophy" size={20} color="#FFD700" style={{ marginRight: 10 }} />
+                    <Text style={styles.awardsButtonText}>View Awards Season Picks</Text>
+                    <Icon name="chevron-right" size={16} color="#FFD700" style={{ position: 'absolute', right: 20 }} />
+                </TouchableOpacity>
 
                 <View style={styles.separator} />
 
@@ -488,6 +521,26 @@ const PublicProfileScreen = () => {
                 </View>
 
                 <View style={styles.separator} />
+
+                {/* Ticket Wallet Section */}
+                {ticketWallet.length > 0 && (
+                    <>
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>{userData.username}'s Ticket Wallet</Text>
+                            <FlatList
+                                horizontal
+                                data={ticketWallet}
+                                keyExtractor={(item) => item.id}
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={{ paddingHorizontal: 10 }}
+                                renderItem={({ item }) => (
+                                    <TicketStubCard stubData={item} />
+                                )}
+                            />
+                        </View>
+                        <View style={styles.separator} />
+                    </>
+                )}
 
                 {/* Top 8 Section */}
                 <View style={styles.section}>
@@ -819,8 +872,31 @@ const styles = StyleSheet.create({
     },
     statSeparator: {
         width: 1,
-        backgroundColor: '#333',
-        height: '100%'
+        height: 30,
+        backgroundColor: '#eee'
+    },
+    awardsButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#1a1a2e',
+        paddingVertical: 15,
+        paddingHorizontal: 20,
+        marginHorizontal: 15,
+        marginTop: 5,
+        marginBottom: 5,
+        borderRadius: 12,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        elevation: 3,
+    },
+    awardsButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+        letterSpacing: 0.5,
     },
     separator: {
         height: 8,

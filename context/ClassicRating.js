@@ -113,13 +113,11 @@ const ClassicRating = ({ initialRating = 0, onSubmitRating = () => { } }) => {
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: COLOR_BACKGROUND_CARD,
-        borderRadius: 15,
-        padding: screenWidth * 0.05,
-        margin: screenWidth * 0.04,
+        backgroundColor: 'transparent',
         alignItems: 'center',
-        width: screenWidth * 0.92,
+        width: '100%',
         alignSelf: 'center',
+        paddingBottom: 20,
     },
     title: {
         fontSize: screenWidth * 0.06,
@@ -130,15 +128,15 @@ const styles = StyleSheet.create({
     subtitle: {
         fontSize: screenWidth * 0.035,
         color: COLOR_TEXT_SECONDARY,
-        marginBottom: 20,
+        marginBottom: 10, // tighter
     },
     ratingDisplayArea: {
         backgroundColor: COLOR_BACKGROUND_DISPLAY,
-        paddingVertical: 15,
+        paddingVertical: 5, // tighter
         paddingHorizontal: 20,
         borderRadius: 10,
         alignItems: 'center',
-        marginBottom: 25,
+        marginBottom: 10, // tighter
         width: '100%',
     },
     ratingValueText: {
@@ -155,7 +153,7 @@ const styles = StyleSheet.create({
     },
     sliderContainer: {
         width: '100%',
-        marginBottom: 25,
+        marginBottom: 15, // tighter
         alignItems: 'center',
     },
     sliderLabelsContainer: {
@@ -172,25 +170,26 @@ const styles = StyleSheet.create({
     buttonsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         width: '100%',
-        marginBottom: 30,
+        marginBottom: 15, // tighter
+        gap: 6, // tighter
     },
     gridButton: {
         backgroundColor: COLOR_BUTTON_GRID_BG,
-        width: '23%',
-        aspectRatio: 1.2,
+        width: '30%', // 3 buttons per row
+        height: 48,    // tighter
         borderRadius: 8,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 5,
-        marginBottom: screenWidth * 0.02,
+        marginBottom: 5,
     },
     gridButtonActive: {
         backgroundColor: COLOR_BUTTON_GRID_BG_ACTIVE,
     },
     gridButtonValue: {
-        fontSize: screenWidth * 0.05,
+        fontSize: screenWidth * 0.045, // slightly smaller
         fontWeight: 'bold',
         color: COLOR_BUTTON_GRID_TEXT,
     },
@@ -205,7 +204,7 @@ const styles = StyleSheet.create({
     },
     submitButton: {
         backgroundColor: COLOR_SUBMIT_BUTTON_BG,
-        paddingVertical: 15,
+        paddingVertical: 12, // tighter
         paddingHorizontal: 40,
         borderRadius: 25,
         width: '80%',

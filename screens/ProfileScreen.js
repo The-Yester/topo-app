@@ -10,6 +10,10 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../firebaseConfig';
+import TicketStubCard from '../components/TicketStubCard';
+import { FlatList } from 'react-native';
 
 const ProfileScreen = () => {
     const navigation = useNavigation();
@@ -21,6 +25,8 @@ const ProfileScreen = () => {
     const [ratingMethod, setRatingMethod] = useState('');
     const [topFilms, setTopFilms] = useState([]);
     const [topFriends, setTopFriends] = useState([]);
+    const [ticketWallet, setTicketWallet] = useState([]);
+    const [theaterPoints, setTheaterPoints] = useState(0);
     const [isLoading, setIsLoading] = useState(true); // Add loading state
 
     useFocusEffect(
@@ -46,6 +52,22 @@ const ProfileScreen = () => {
                 setRatingMethod(currentUser.ratingMethod || '');
                 setTopFilms(currentUser.topFilms ? JSON.parse(currentUser.topFilms) : []); // Parse
                 setTopFriends(currentUser.topFriends ? JSON.parse(currentUser.topFriends) : []); // Parse
+
+                // Fetch Wallet from Firebase to ensure LIVE accuracy
+                if (auth.currentUser) {
+                    const uid = auth.currentUser.uid;
+                    const userDoc = await getDoc(doc(db, "users", uid));
+                    if (userDoc.exists()) {
+                        setTheaterPoints(userDoc.data().theaterPoints || 0);
+                    }
+                    const stubsRef = collection(db, "users", uid, "ticketWallet");
+                    const stubsSnap = await getDocs(stubsRef);
+                    const stubs = [];
+                    stubsSnap.forEach(sDoc => stubs.push(sDoc.data()));
+                    stubs.sort((a,b) => new Date(b.mintDate) - new Date(a.mintDate));
+                    setTicketWallet(stubs);
+                }
+
             } else {
                 console.warn("Current user data not found.");
                 navigation.navigate('Login'); // Or handle appropriately
@@ -77,6 +99,25 @@ const ProfileScreen = () => {
                         <Text style={profileStyles.editProfileText}>Edit Profile</Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* Theater Points */}
+                <View style={{ alignItems: 'center', marginBottom: 15 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '900', color: '#1976d2' }}>Theater Points: {theaterPoints}</Text>
+                </View>
+
+                {/* Ticket Wallet Section */}
+                {ticketWallet.length > 0 && (
+                    <View style={listSectionStyles.container}>
+                        <Text style={listSectionStyles.title}>Digital Ticket Wallet</Text>
+                        <FlatList
+                            horizontal
+                            data={ticketWallet}
+                            keyExtractor={(item) => item.id}
+                            showsHorizontalScrollIndicator={false}
+                            renderItem={({ item }) => <TicketStubCard stubData={item} />}
+                        />
+                    </View>
+                )}
 
                 <View style={infoSectionStyles.container}>
                     <Text style={infoSectionStyles.title}>Name</Text>

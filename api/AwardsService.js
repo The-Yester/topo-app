@@ -203,7 +203,7 @@ export const fetchUserBallot = async (userId, eventId) => {
 };
 
 // 9. Admin: Mark Category Winner
-export const markCategoryWinner = async (eventId, categoryId, nomineeTmdbId) => {
+export const markCategoryWinner = async (eventId, categoryId, nomineeTmdbIds) => {
     try {
         const eventRef = doc(db, EVENTS_COLLECTION, eventId);
         const eventSnap = await import('firebase/firestore').then(mod => mod.getDoc(eventRef));
@@ -213,7 +213,7 @@ export const markCategoryWinner = async (eventId, categoryId, nomineeTmdbId) => 
 
         const updatedCategories = eventDocData.categories.map(cat => {
             if (cat.id === categoryId) {
-                return { ...cat, winnerId: nomineeTmdbId }; // Naming: nomineeTmdbId arg is now effectively nomineeUniqueId
+                return { ...cat, winnerIds: nomineeTmdbIds }; // Naming: nomineeTmdbIds arg is now an array
             }
             return cat;
         });

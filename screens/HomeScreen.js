@@ -544,6 +544,19 @@ const styles = StyleSheet.create({
     sectionContainer: {
         padding: 20,
         backgroundColor: '#fff',
+        borderRadius: 20,
+        marginHorizontal: 10,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#C6A87C',
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.15,
+        shadowRadius: 4.65,
+        elevation: 8,
     },
     sectionTitle: {
         fontSize: 20,

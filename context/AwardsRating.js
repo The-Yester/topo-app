@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   Dimensions,
+  TouchableOpacity
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 
@@ -34,6 +35,24 @@ const AWARD_CATEGORIES = [
   'Production Design',
   'Film Editing',
   'Visual Effects'
+];
+
+const ANIMATION_CATEGORIES = [
+  'Directing',
+  'Screenplay',
+  'Score',
+  'Song',
+  'Film Editing',
+  'Visual Effects'
+];
+
+const DOCUMENTARY_CATEGORIES = [
+  'Directing',
+  'Score',
+  'Song',
+  'Cinematography',
+  'Production Design',
+  'Film Editing'
 ];
 
 // Memoized Row Component to ensure smooth slider performance
@@ -68,13 +87,15 @@ const CategoryRow = memo(({ category, value, onValueChange }) => {
     </View>
   );
 }, (prevProps, nextProps) => {
-  // Custom equality check: only re-render if value changed
   return prevProps.value === nextProps.value;
 });
 
 const DEFAULT_EXCLUDED = [];
 
-const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFAULT_EXCLUDED }) => {
+const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFAULT_EXCLUDED, forceKey = 0, initialFilter = 'Movie', children }) => {
+  const [activeFilter, setActiveFilter] = useState(initialFilter); // 'Movie', 'Animation', 'Documentary'
+
+  // Initialize with initialRatings immediately to prevent N/A flicker
   const [ratings, setRatings] = useState(() => {
     const defaultRatings = {};
     AWARD_CATEGORIES.forEach(category => {
@@ -84,54 +105,31 @@ const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFA
     return defaultRatings;
   });
 
-  // Track last reported to prevent loops
   const lastReportedJson = React.useRef("");
+  const isMounted = React.useRef(false);
 
-  // Calculate Average on change
+  // Deep Sync from Props (Hydration fix)
   useEffect(() => {
-    // Basic structural check to avoid churn
-    const currentJson = JSON.stringify(ratings);
-    if (currentJson === lastReportedJson.current) return;
-
-    const validValues = Object.entries(ratings)
-      .filter(([key, val]) => !excludedCategories.includes(key) && val > 0)
-      .map(([_, val]) => val);
-
-    if (validValues.length > 0) {
-      const sum = validValues.reduce((acc, val) => acc + val, 0);
-      const average = sum / validValues.length;
-
-      // Update ref before calling out
-      lastReportedJson.current = currentJson;
-      onChange?.(parseFloat(average.toFixed(1)), ratings);
-    } else {
-      if (lastReportedJson.current !== currentJson) {
-        lastReportedJson.current = currentJson;
-        onChange?.(null, ratings);
-      }
-      if (lastReportedJson.current !== currentJson) {
-        lastReportedJson.current = currentJson;
-        onChange?.(null, ratings);
-      }
-    }
-  }, [ratings, excludedCategories]); // Removed onChange to prevent loops
-
-  // 2. Data Sync: If initialRatings changes (e.g. loaded from DB), update local state
-  // This is tricky to do without loops. We only do it if local state is "default" (mostly 0s)
-  // OR we assume parent knows best when providing new initialRatings.
-  // A safe way is to use a Ref to track if we've "touched" the controls.
-  const hasUserInteracted = React.useRef(false);
-
-  useEffect(() => {
-    if (!hasUserInteracted.current && initialRatings && Object.keys(initialRatings).length > 0) {
+    if (initialRatings) {
       setRatings(prev => {
-        // Merge
         const next = { ...prev };
         let changed = false;
+        // We do a hard map of everything in AWARD_CATEGORIES based on what was passed
         AWARD_CATEGORIES.forEach(cat => {
-          if (initialRatings[cat] !== undefined && initialRatings[cat] !== next[cat]) {
-            next[cat] = parseFloat(initialRatings[cat]);
-            changed = true;
+          // Check if the prop has a value
+          if (initialRatings[cat] !== undefined) {
+            const initialVal = parseFloat(initialRatings[cat]);
+            if (!isNaN(initialVal) && initialVal !== next[cat]) {
+              next[cat] = initialVal;
+              changed = true;
+            }
+          } else {
+            // If the prop DOES NOT have this cat, and our local state does, reset local to 0.
+            // (This happens if we switch from a movie with a deep review to a brand new one)
+            if (next[cat] !== 0) {
+              next[cat] = 0;
+              changed = true;
+            }
           }
         });
         return changed ? next : prev;
@@ -139,18 +137,52 @@ const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFA
     }
   }, [initialRatings]);
 
+  // Calculate Average on change
+  useEffect(() => {
+    // Basic structural check to avoid churn
+    const currentJson = JSON.stringify(ratings);
+    if (lastReportedJson.current === currentJson) return;
+
+    // Filter valid values based on CURRENT active filter so average reflects the filter
+    let visibleCategories = AWARD_CATEGORIES;
+    if (activeFilter === 'Animation') visibleCategories = ANIMATION_CATEGORIES;
+    if (activeFilter === 'Documentary') visibleCategories = DOCUMENTARY_CATEGORIES;
+
+    const validValues = Object.entries(ratings)
+      .filter(([key, val]) => visibleCategories.includes(key) && !excludedCategories.includes(key) && val > 0)
+      .map(([_, val]) => val);
+
+    if (validValues.length > 0) {
+      const sum = validValues.reduce((acc, val) => acc + val, 0);
+      const average = sum / validValues.length;
+      lastReportedJson.current = currentJson;
+      onChange?.(parseFloat(average.toFixed(1)), ratings, activeFilter);
+    } else {
+      if (lastReportedJson.current !== currentJson) {
+        lastReportedJson.current = currentJson;
+        onChange?.(null, ratings, activeFilter);
+      }
+    }
+  }, [ratings, excludedCategories, activeFilter, onChange]); // Re-calculate average if filter changes
+
   // Stable callback for updating state
   const handleSliderChange = useCallback((category, value) => {
-    hasUserInteracted.current = true; // Mark as user-controlled
-    setRatings(prev => ({
-      ...prev,
-      [category]: parseFloat(value.toFixed(1))
-    }));
+    setRatings(prev => {
+      if (prev[category] === parseFloat(value.toFixed(1))) return prev; // Avoid unnecessary updates
+      return {
+        ...prev,
+        [category]: parseFloat(value.toFixed(1))
+      };
+    });
   }, []);
 
   const getOverallScore = () => {
+    let visibleCategories = AWARD_CATEGORIES;
+    if (activeFilter === 'Animation') visibleCategories = ANIMATION_CATEGORIES;
+    if (activeFilter === 'Documentary') visibleCategories = DOCUMENTARY_CATEGORIES;
+
     const validValues = Object.entries(ratings)
-      .filter(([key, val]) => !excludedCategories.includes(key) && val > 0)
+      .filter(([key, val]) => visibleCategories.includes(key) && !excludedCategories.includes(key) && val > 0)
       .map(([_, val]) => val);
 
     if (validValues.length === 0) return "N/A";
@@ -158,19 +190,46 @@ const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFA
     return (sum / validValues.length).toFixed(1);
   };
 
+  // Determine categories to show based on filter
+  let displayCategories = AWARD_CATEGORIES;
+  if (activeFilter === 'Animation') displayCategories = ANIMATION_CATEGORIES;
+  if (activeFilter === 'Documentary') displayCategories = DOCUMENTARY_CATEGORIES;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Awards Rating</Text>
-        <Text style={styles.subtitle}>Rate categories 0-10 (0 = N/A)</Text>
+
+        {/* Filter Tabs */}
+        <View style={styles.filterTabsContainer}>
+          <TouchableOpacity
+            style={[styles.filterTab, activeFilter === 'Movie' && styles.filterTabActive]}
+            onPress={() => setActiveFilter('Movie')}
+          >
+            <Text style={[styles.filterTabText, activeFilter === 'Movie' && styles.filterTabTextActive]}>Movie</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterTab, activeFilter === 'Animation' && styles.filterTabActive]}
+            onPress={() => setActiveFilter('Animation')}
+          >
+            <Text style={[styles.filterTabText, activeFilter === 'Animation' && styles.filterTabTextActive]}>Animation</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterTab, activeFilter === 'Documentary' && styles.filterTabActive]}
+            onPress={() => setActiveFilter('Documentary')}
+          >
+            <Text style={[styles.filterTabText, activeFilter === 'Documentary' && styles.filterTabTextActive]}>Doc</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.averageContainer}>
-          <Text style={styles.averageLabel}>Overall Score</Text>
+          <Text style={styles.averageLabel}>{activeFilter} Score</Text>
           <Text style={styles.averageValue}>{getOverallScore()}</Text>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} removeClippedSubviews={true}>
-        {AWARD_CATEGORIES.filter(cat => !excludedCategories.includes(cat)).map((category) => (
+      <ScrollView contentContainerStyle={styles.scrollContent} removeClippedSubviews={false}>
+        {displayCategories.filter(cat => !excludedCategories.includes(cat)).map((category) => (
           <CategoryRow
             key={category}
             category={category}
@@ -178,18 +237,29 @@ const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFA
             onValueChange={(val) => handleSliderChange(category, val)}
           />
         ))}
+        {/* Render buttons or extra content supplied by parent */}
+        {children && <View style={styles.childrenWrapper}>{children}</View>}
       </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  childrenWrapper: {
+    marginTop: 20,
+    width: '100%'
+  },
   container: {
     flex: 1,
+    flexShrink: 1, // Let it shrink
     backgroundColor: COLOR_BG,
+    borderRadius: 15,
+    overflow: 'hidden',
   },
   header: {
-    padding: 20,
+    paddingTop: 15,
+    paddingHorizontal: 20,
+    paddingBottom: 15,
     backgroundColor: COLOR_BG,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
@@ -199,12 +269,34 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: COLOR_TEXT_PRIMARY,
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: COLOR_TEXT_SECONDARY,
     marginBottom: 15,
+  },
+  filterTabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 15,
+    width: '100%',
+    justifyContent: 'space-between'
+  },
+  filterTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  filterTabActive: {
+    backgroundColor: COLOR_ACCENT,
+  },
+  filterTabText: {
+    color: '#aaa',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textTransform: 'uppercase'
+  },
+  filterTabTextActive: {
+    color: '#fff',
   },
   averageContainer: {
     flexDirection: 'row',
@@ -226,7 +318,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 15,
-    paddingBottom: 40,
+    paddingBottom: 25, // Reduced from 40 to bring it tighter
   },
   row: {
     backgroundColor: COLOR_CARD_BG,

@@ -758,7 +758,7 @@ const ProfileSettings = ({ navigation }) => {
                     {/* App Version */}
                     <View style={styles.aboutRow}>
                         <Text style={styles.aboutText}>App Version</Text>
-                        <Text style={[styles.aboutText, { color: '#888' }]}>1.0.2</Text>
+                        <Text style={[styles.aboutText, { color: '#888' }]}>2.0.0</Text>
                     </View>
 
                     {/* Terms of Service */}
@@ -822,59 +822,52 @@ const ProfileSettings = ({ navigation }) => {
                         />
                     </View>
 
-                    {/* Results or Following List? Let's show results first */}
+                    {/* Results or Following List? Handle with a single FlatList for scrollability */}
                     <FlatList
-                        data={friendSearchResults}
+                        data={friendSearchQuery.length > 0 ? friendSearchResults : following}
                         keyExtractor={item => item.uid}
+                        ListHeaderComponent={() => (
+                            friendSearchQuery.length === 0 ? (
+                                <Text style={{ color: '#666', padding: 20, paddingBottom: 10 }}>People you follow:</Text>
+                            ) : null
+                        )}
                         renderItem={({ item }) => {
                             const isFollowing = following.some(f => f.uid === item.uid);
                             const isTop = topFriends.some(f => f.uid === item.uid);
                             return (
-                                <View style={styles.friendRow}>
-                                    <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={() => navigation.navigate('PublicProfile', { userId: item.uid })}>
+                                <View style={[styles.friendRow, { paddingHorizontal: 20 }]}>
+                                    <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={() => { setIsFriendModalVisible(false); navigation.navigate('PublicProfile', { userId: item.uid }); }}>
                                         <Image source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')} style={styles.friendListImg} />
-                                        <Text style={styles.friendListname}>{item.username}</Text>
+                                        <Text style={styles.friendListname}>{item.name || item.username}</Text>
                                     </TouchableOpacity>
 
-                                    {/* Follow Button */}
-                                    {!isFollowing && (
+                                    {/* Follow Button (Only show if we are searching and not following them) */}
+                                    {friendSearchQuery.length > 0 && !isFollowing && (
                                         <TouchableOpacity style={styles.followBtn} onPress={() => followUser(item)}>
                                             <Text style={{ color: '#000', fontWeight: 'bold' }}>Follow</Text>
                                         </TouchableOpacity>
                                     )}
 
-                                    {/* Top 4 Button (Only if following) */}
+                                    {/* Top 4 Button (Must be following them) */}
                                     {isFollowing && (
                                         <TouchableOpacity
                                             style={[styles.topFriendBtn, isTop && { backgroundColor: '#ff8c00' }]}
                                             onPress={() => toggleTopFriend(item)}
                                         >
-                                            <Text style={{ color: '#fff' }}>{isTop ? 'In Top 4' : 'Add Top 4'}</Text>
+                                            <Text style={{ color: '#fff', fontSize: 12 }}>{isTop ? 'In Top 4' : 'Add Top 4'}</Text>
                                         </TouchableOpacity>
                                     )}
                                 </View>
                             )
                         }}
+                        ListEmptyComponent={() => (
+                            friendSearchQuery.length > 0 ? (
+                                <Text style={{ color: '#666', padding: 20, textAlign: 'center' }}>No users found.</Text>
+                            ) : (
+                                <Text style={{ color: '#666', padding: 20, textAlign: 'center' }}>You aren't following anyone yet.</Text>
+                            )
+                        )}
                     />
-                    {friendSearchResults.length === 0 && (
-                        <View style={{ padding: 20 }}>
-                            <Text style={{ color: '#666', marginBottom: 10 }}>People you follow:</Text>
-                            {following.map(f => (
-                                <View key={f.uid} style={styles.friendRow}>
-                                    <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={() => navigation.navigate('PublicProfile', { userId: f.uid })}>
-                                        <Image source={f.profilePhoto ? { uri: f.profilePhoto } : require('../assets/profile_placeholder.jpg')} style={styles.friendListImg} />
-                                        <Text style={styles.friendListname}>{f.username}</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.topFriendBtn, topFriends.some(tf => tf.uid === f.uid) && { backgroundColor: '#ff8c00' }]}
-                                        onPress={() => toggleTopFriend(f)}
-                                    >
-                                        <Text style={{ color: '#fff' }}>{topFriends.some(tf => tf.uid === f.uid) ? 'In Top 4' : 'Add Top 4'}</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                        </View>
-                    )}
 
                 </SafeAreaView>
             </Modal>

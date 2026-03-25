@@ -213,6 +213,7 @@ const PizzaRating = ({ initialRating = 0, onSubmitRating, readonly = false, size
 
             <Text style={styles.ratingValueText}>{rating.toFixed(1)} / {MAX_RATING}</Text>
             <Text style={styles.ratingDescriptionText}>{getRatingDescription(rating)}</Text>
+            <Text style={styles.hintText}>Slide finger customized pizza slices!</Text>
 
             <View style={styles.buttonsContainer}>
                 <TouchableOpacity style={styles.resetButton} onPress={resetRating}>
@@ -222,20 +223,17 @@ const PizzaRating = ({ initialRating = 0, onSubmitRating, readonly = false, size
                     <Text style={styles.submitButtonText}>Submit Rating</Text>
                 </TouchableOpacity>
             </View>
-            <Text style={styles.hintText}>Slide finger customized pizza slices!</Text>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: COLOR_BACKGROUND_CARD,
-        borderRadius: 15,
-        padding: 20,
+        backgroundColor: 'transparent',
         alignItems: 'center',
-        width: screenWidth * 0.92,
+        width: '100%',
         alignSelf: 'center',
-        marginTop: 10,
+        marginTop: 5,
     },
     title: {
         fontSize: 22,
@@ -266,11 +264,13 @@ const styles = StyleSheet.create({
     },
     resetButton: {
         backgroundColor: BUTTON_COLOR_RESET,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        height: 50,
+        justifyContent: 'center',
         borderRadius: 25,
         flex: 1,
-        marginRight: 10,
+        marginRight: 5,
         alignItems: 'center',
     },
     resetButtonText: {
@@ -280,10 +280,13 @@ const styles = StyleSheet.create({
     },
     submitButton: {
         backgroundColor: BUTTON_COLOR_SUBMIT,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        height: 50,
+        justifyContent: 'center',
         borderRadius: 25,
-        flex: 2,
+        flex: 1,
+        marginLeft: 5,
         alignItems: 'center',
     },
     submitButtonText: {
@@ -294,6 +297,7 @@ const styles = StyleSheet.create({
     hintText: {
         fontSize: 12,
         color: TEXT_COLOR_SECONDARY,
+        marginBottom: 20,
     },
 });
 

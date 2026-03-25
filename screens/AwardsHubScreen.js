@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert, Platform, StatusBar, Modal, FlatList } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { fetchActiveAwardsEvents, seedAwardsData, saveUserPick, fetchUserBallot } from '../api/AwardsService';
 import { auth, db } from '../firebaseConfig';
-import { collection, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, doc, getDoc } from 'firebase/firestore';
 import { ADMIN_UIDS } from '../utils/config';
 
 const AwardsHubScreen = () => {
@@ -18,6 +18,10 @@ const AwardsHubScreen = () => {
     const [pickingProgress, setPickingProgress] = useState({ picked: 0, total: 0, correct: 0, decided: 0 });
     const [percentile, setPercentile] = useState(null);
 
+    // Leaderboard State
+    const [leaderboardVisible, setLeaderboardVisible] = useState(false);
+    const [leaderboardData, setLeaderboardData] = useState([]);
+
     useEffect(() => {
         loadData();
     }, []);
@@ -27,7 +31,7 @@ const AwardsHubScreen = () => {
         if (event && auth.currentUser) {
             loadBallot(event.id);
             // Only calculate percentile if there are results
-            if (event.categories.some(c => c.winnerTmdbId)) {
+            if (event.categories.some(c => c.winnerId || c.winnerTmdbId)) {
                 loadPeerPerformance(event);
             } else {
                 setPercentile(null);
@@ -74,6 +78,20 @@ const AwardsHubScreen = () => {
         setUserBallot(ballot || {});
     };
 
+    const getActualTmdbId = (category, anyId) => {
+        if (!anyId) return null;
+        const obj = category.nominees?.find(n => (n.id || n.tmdbId) === anyId);
+        return obj ? obj.tmdbId : anyId;
+    };
+
+    const getWinnerTmdbIds = (category) => {
+        let winners = category.winnerIds || [];
+        if (!category.winnerIds && (category.winnerId || category.winnerTmdbId)) {
+            winners = [category.winnerId || category.winnerTmdbId];
+        }
+        return winners.map(wId => getActualTmdbId(category, wId)).filter(Boolean);
+    };
+
     // Calculate Percentile
     const loadPeerPerformance = async (currentEvent) => {
         try {
@@ -82,30 +100,64 @@ const AwardsHubScreen = () => {
             const querySnapshot = await getDocs(q);
 
             let allScores = [];
+            let leaderboardEntries = [];
 
             // 2. Iterate and score each ballot
             querySnapshot.forEach((doc) => {
                 if (doc.id === currentEvent.id) { // Filter by Event ID
+                    // Skip 'sample' or other metadata docs if they exist
+                    const userId = doc.ref.parent.parent?.id;
+                    if (!userId) return;
+
                     const ballotData = doc.data();
                     let score = 0;
                     currentEvent.categories.forEach(cat => {
-                        if (cat.winnerTmdbId && ballotData[cat.id] === cat.winnerTmdbId) {
+                        const winnerTmdbIds = getWinnerTmdbIds(cat);
+                        const pickTmdbId = getActualTmdbId(cat, ballotData[cat.id]);
+                        if (winnerTmdbIds.length > 0 && winnerTmdbIds.includes(pickTmdbId)) {
                             score++;
                         }
                     });
                     allScores.push(score);
+                    leaderboardEntries.push({ userId, score });
                 }
             });
 
             if (allScores.length === 0) {
                 setPercentile(null);
+                setLeaderboardData([]);
                 return;
             }
+
+            // 2.5 Fetch User Profiles for Leaderboard
+            const profilesPromises = leaderboardEntries.map(async (entry) => {
+                try {
+                    const userDoc = await getDoc(doc(db, "users", entry.userId));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        return {
+                            ...entry,
+                            username: userData.username || "Anonymous",
+                            name: userData.name || "Topo User",
+                            avatar: userData.profilePhoto || null,
+                        };
+                    }
+                } catch (e) {
+                    console.log("Error fetching user for leaderboard", e);
+                }
+                return { ...entry, username: "Anonymous", name: "Topo User", avatar: null };
+            });
+
+            const resolvedLeaderboard = await Promise.all(profilesPromises);
+            resolvedLeaderboard.sort((a, b) => b.score - a.score);
+            setLeaderboardData(resolvedLeaderboard);
 
             // 3. Calculate My Score
             let myScore = 0;
             currentEvent.categories.forEach(cat => {
-                if (cat.winnerTmdbId && userBallot[cat.id] === cat.winnerTmdbId) {
+                const winnerTmdbIds = getWinnerTmdbIds(cat);
+                const pickTmdbId = getActualTmdbId(cat, userBallot[cat.id]);
+                if (winnerTmdbIds.length > 0 && winnerTmdbIds.includes(pickTmdbId)) {
                     myScore++;
                 }
             });
@@ -131,9 +183,11 @@ const AwardsHubScreen = () => {
         let correct = 0;
         let decided = 0;
         event.categories.forEach(cat => {
-            if (cat.winnerTmdbId) {
+            const winnerTmdbIds = getWinnerTmdbIds(cat);
+            if (winnerTmdbIds.length > 0) {
                 decided++;
-                if (userBallot[cat.id] === cat.winnerTmdbId) correct++;
+                const pickTmdbId = getActualTmdbId(cat, userBallot[cat.id]);
+                if (winnerTmdbIds.includes(pickTmdbId)) correct++;
             }
         });
 
@@ -208,12 +262,15 @@ const AwardsHubScreen = () => {
             return;
         }
 
+        // Use unique ID if available, otherwise fallback to tmdbId
+        const pickIdToSave = nominee.id || nominee.tmdbId;
+
         // Optimistic UI update
-        const newBallot = { ...userBallot, [category.id]: nominee.tmdbId };
+        const newBallot = { ...userBallot, [category.id]: pickIdToSave };
         setUserBallot(newBallot);
 
         try {
-            await saveUserPick(auth.currentUser.uid, event.id, category.id, nominee.tmdbId);
+            await saveUserPick(auth.currentUser.uid, event.id, category.id, pickIdToSave);
         } catch (e) {
             Alert.alert("Error", "Failed to save pick");
         }
@@ -276,7 +333,7 @@ const AwardsHubScreen = () => {
                     <Text style={styles.headerTitle}>Awards Season Hub</Text>
                     <Text style={styles.headerSubtitle}>Prediction Ballot Game</Text>
                 </View>
-                <View style={{ width: 40 }} />
+                <View style={{ width: 20 }} />
             </View>
 
             {/* EVENT SELECTOR TABS */}
@@ -322,6 +379,13 @@ const AwardsHubScreen = () => {
                         </View>
                     )}
 
+                    {pickingProgress.decided > 0 && (
+                        <TouchableOpacity onPress={() => setLeaderboardVisible(true)} style={styles.leaderboardButton}>
+                            <Icon name="list-ol" size={14} color="#FFD700" style={{ marginRight: 8 }} />
+                            <Text style={styles.leaderboardButtonText}>VIEW LEADERBOARD</Text>
+                        </TouchableOpacity>
+                    )}
+
                     {locked ? (
                         <View style={styles.lockedBanner}>
                             <Icon name="lock" size={16} color="#fff" style={{ marginRight: 8 }} />
@@ -344,8 +408,14 @@ const AwardsHubScreen = () => {
                     const myPickId = userBallot[category.id];
 
                     // Does Actual Winner exist?
-                    const actualWinnerId = category.winnerTmdbId;
-                    const hasWinner = !!actualWinnerId;
+                    const winnerTmdbIds = getWinnerTmdbIds(category);
+                    const hasWinner = winnerTmdbIds.length > 0;
+
+                    let isPickCorrect = false;
+                    if (myPickId && hasWinner) {
+                        const myPickTmdbId = getActualTmdbId(category, myPickId);
+                        isPickCorrect = winnerTmdbIds.includes(myPickTmdbId);
+                    }
 
                     return (
                         <View key={category.id} style={[styles.categoryCard, locked && !myPickId && { opacity: 0.5 }]}>
@@ -353,8 +423,8 @@ const AwardsHubScreen = () => {
                                 <Text style={styles.categoryTitle}>{category.name}</Text>
                                 {/* Correct/Incorrect Indicator Next to Title? */}
                                 {hasWinner && myPickId && (
-                                    <View style={[styles.resultBadge, myPickId === actualWinnerId ? styles.resultBadgeCorrect : styles.resultBadgeWrong]}>
-                                        <Text style={styles.resultText}>{myPickId === actualWinnerId ? "CORRECT" : "MISSED"}</Text>
+                                    <View style={[styles.resultBadge, isPickCorrect ? styles.resultBadgeCorrect : styles.resultBadgeWrong]}>
+                                        <Text style={styles.resultText}>{isPickCorrect ? "CORRECT" : "MISSED"}</Text>
                                     </View>
                                 )}
                             </View>
@@ -365,12 +435,19 @@ const AwardsHubScreen = () => {
                                     const rating = userRatings[nominee.tmdbId.toString()];
                                     const specificScore = rating?.breakdown?.[category.awardsRatingKey];
 
-                                    const isAnalyticalPick = analyticalPick && analyticalPick.tmdbId === nominee.tmdbId;
-                                    const isMyLockedPick = myPickId === nominee.tmdbId;
-                                    const isActualWinner = actualWinnerId === nominee.tmdbId; // Winner stored as TMDB ID or Unique? We switched to WinnerID. Check below.
-
-                                    // Identifier
+                                    // Identifier for UI display matching exactly
                                     const identifier = nominee.id || nominee.tmdbId;
+
+                                    const isAnalyticalPick = analyticalPick && (analyticalPick.id || analyticalPick.tmdbId) === identifier;
+
+                                    // A user's old vote might just be the tmdbId. A new vote is the exact identifier.
+                                    const isMyLockedPick = myPickId === identifier || myPickId === nominee.tmdbId;
+
+                                    let currentWinners = category.winnerIds || [];
+                                    if (!category.winnerIds && (category.winnerId || category.winnerTmdbId)) {
+                                        currentWinners = [category.winnerId || category.winnerTmdbId];
+                                    }
+                                    const isActualWinner = currentWinners.includes(identifier) || currentWinners.includes(nominee.tmdbId);
 
                                     return (
                                         <TouchableOpacity
@@ -471,6 +548,56 @@ const AwardsHubScreen = () => {
                 </View>
 
             </ScrollView>
+
+            {/* LEADERBOARD MODAL */}
+            <Modal
+                visible={leaderboardVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setLeaderboardVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>{event?.name} Leaderboard</Text>
+                            <TouchableOpacity onPress={() => setLeaderboardVisible(false)} style={styles.closeModalBtn}>
+                                <Icon name="close" size={20} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {leaderboardData.length > 0 ? (
+                            <FlatList
+                                data={leaderboardData}
+                                keyExtractor={(item) => item.userId}
+                                renderItem={({ item, index }) => {
+                                    const isMe = item.userId === auth.currentUser?.uid;
+                                    return (
+                                        <View style={[styles.leaderboardRow, isMe && styles.leaderboardRowMe]}>
+                                            <Text style={styles.leaderboardRank}>{index + 1}</Text>
+                                            <Image
+                                                source={{ uri: item.avatar || 'https://via.placeholder.com/50' }}
+                                                style={styles.leaderboardAvatar}
+                                            />
+                                            <View style={{ flex: 1, marginLeft: 15 }}>
+                                                <Text style={styles.leaderboardName} numberOfLines={1}>
+                                                    {item.name} {isMe && "(You)"}
+                                                </Text>
+                                                <Text style={styles.leaderboardUsername}>@{item.username}</Text>
+                                            </View>
+                                            <Text style={styles.leaderboardScore}>{item.score}</Text>
+                                        </View>
+                                    );
+                                }}
+                            />
+                        ) : (
+                            <View style={{ padding: 20, alignItems: 'center' }}>
+                                <Text style={{ color: '#888' }}>No results yet.</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </Modal>
+
         </SafeAreaView>
     );
 };
@@ -553,11 +680,29 @@ const styles = StyleSheet.create({
     scoreValue: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     scoreSubtext: { color: '#aaa', fontSize: 9 },
 
+    leaderboardButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#333', paddingVertical: 10, borderRadius: 8, marginTop: -5, marginBottom: 15 },
+    leaderboardButtonText: { color: '#FFD700', fontWeight: 'bold', fontSize: 12, letterSpacing: 0.5 },
+
     userRatingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 215, 0, 0.15)', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4, borderWidth: 1, borderColor: '#FFD700' },
     userRatingText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
 
     attributionContainer: { padding: 20, alignItems: 'center', justifyContent: 'center', opacity: 0.5, marginTop: 20 },
-    attributionText: { color: '#fff', fontSize: 10, fontStyle: 'italic', textAlign: 'center' }
+    attributionText: { color: '#fff', fontSize: 10, fontStyle: 'italic', textAlign: 'center' },
+
+    // Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: '#161625', height: '80%', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 15 },
+    modalTitle: { color: '#FFD700', fontSize: 18, fontWeight: 'bold', textTransform: 'uppercase' },
+    closeModalBtn: { padding: 5 },
+
+    leaderboardRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#222' },
+    leaderboardRowMe: { backgroundColor: 'rgba(255, 215, 0, 0.1)', borderRadius: 8, paddingHorizontal: 10, marginLeft: -10, marginRight: -10 },
+    leaderboardRank: { color: '#888', fontSize: 16, fontWeight: 'bold', width: 30, textAlign: 'center' },
+    leaderboardAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#333', marginLeft: 10 },
+    leaderboardName: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+    leaderboardUsername: { color: '#888', fontSize: 12 },
+    leaderboardScore: { color: '#FFD700', fontSize: 20, fontWeight: 'bold', marginLeft: 15 }
 
 });
 

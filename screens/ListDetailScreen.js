@@ -1,7 +1,9 @@
 import React, { useContext, useMemo, useLayoutEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, Alert, Modal, SafeAreaView, Platform, StatusBar, Share } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, Alert, Modal, SafeAreaView, Platform, StatusBar, Share, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { MoviesContext } from '../context/MoviesContext'; // Adjust path as needed
 import { useNavigation } from '@react-navigation/native'; // Import useNavigation
 
@@ -14,10 +16,44 @@ const ListDetailScreen = ({ route }) => {
   const { listId, listName } = route.params;
   console.log(`[ListDetailScreen] Received listId: "${listId}", listName: "${listName}"`);
 
-  const { getMoviesInList, removeMovieFromList, overallRatedMovies } = useContext(MoviesContext);
+  const { getMoviesInList, removeMovieFromList, overallRatedMovies, ratingMethod } = useContext(MoviesContext);
   const navigation = useNavigation();
   const [sortBy, setSortBy] = useState('Highest Rated'); // Default sort
   const [isSortModalVisible, setSortModalVisible] = useState(false);
+  const [isGridView, setIsGridView] = useState(false); // Toggle for grid view
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(true); // Prevent UI flash
+
+  // Load persisted view and sort logic
+  React.useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const savedSortBy = await AsyncStorage.getItem(`sortOrderListDetail_${listId}`);
+        if (savedSortBy !== null) {
+          setSortBy(savedSortBy);
+        }
+
+        const savedGridView = await AsyncStorage.getItem(`isGridViewListDetail_${listId}`);
+        if (savedGridView !== null) {
+          setIsGridView(savedGridView === 'true');
+        }
+      } catch (e) {
+        console.error("Failed to load list details preferences.", e);
+      } finally {
+        setIsLoadingPreferences(false);
+      }
+    };
+    loadPreferences();
+  }, [listId]);
+
+  const toggleGridView = async () => {
+    const newValue = !isGridView;
+    setIsGridView(newValue);
+    try {
+      await AsyncStorage.setItem(`isGridViewListDetail_${listId}`, newValue.toString());
+    } catch (e) {
+      console.error("Failed to save grid view preference.", e);
+    }
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -111,7 +147,11 @@ const ListDetailScreen = ({ route }) => {
             // Let's assume global 'MessageBoard' or 'Reelz' screen name.
             // Given previous step confirmed 'MessageBoard.js', let's try 'MessageBoard' first or 'Reelz' if that is the route name.
             // User called it "Reelz page", bottom tab is often 'Reelz'.
-            navigation.navigate('MessageBoard', { initialText: text });
+            const posterToShare = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null;
+            navigation.navigate('MainTabs', {
+              screen: 'Message Board',
+              params: { initialText: text, initialPosterUrl: posterToShare }
+            });
           }
         },
         {
@@ -175,6 +215,45 @@ const ListDetailScreen = ({ route }) => {
     );
   };
 
+  const renderGridItem = ({ item, index }) => {
+    const posterUrl = item.poster_path
+      ? `https://image.tmdb.org/t/p/w200${item.poster_path}`
+      : 'https://placehold.co/100x150/333/fff?text=No+Image';
+
+    const rank = index + 1;
+    const yourRating = item.userOverallRating;
+
+    return (
+      <TouchableOpacity
+        style={styles.gridItemContainer}
+        onPress={() => handleItemPress(item)}
+      >
+        <Image source={{ uri: posterUrl }} style={styles.gridPosterImage} />
+        <View style={styles.gridItemFooter}>
+          <Text style={styles.gridFooterRankText}>{rank}</Text>
+          {yourRating !== undefined && yourRating !== null && (
+            <View style={styles.gridRatingBadge}>
+              {(!ratingMethod || ratingMethod === '1-5') && <MaterialIcon name="pizza" size={14} color="#000" style={{ marginRight: 3 }} />}
+              {(ratingMethod === '1-10' || ratingMethod === 'Classic') && <Icon name="star" size={12} color="#000" style={{ marginRight: 3 }} />}
+              {ratingMethod === 'Percentage' && <Icon name="percent" size={12} color="#000" style={{ marginRight: 2 }} />}
+              {ratingMethod === 'Awards' && <Icon name="trophy" size={14} color="#000" style={{ marginRight: 3 }} />}
+              {ratingMethod === 'Thumbs' && <MaterialIcon name="thumb-up" size={12} color="#000" style={{ marginRight: 3 }} />}
+              <Text style={styles.gridRatingText}>{parseFloat(yourRating).toFixed(1)}</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  if (isLoadingPreferences) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#ff8c00" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.headerContainer}>
@@ -182,9 +261,14 @@ const ListDetailScreen = ({ route }) => {
           <Icon name="arrow-left" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.listNameTitle}>{listName}</Text>
-        <TouchableOpacity style={styles.sortButton} onPress={() => setSortModalVisible(true)}>
-          <Icon name="sort" size={24} color="#FFF" />
-        </TouchableOpacity>
+        <View style={styles.headerButtonsContainer}>
+          <TouchableOpacity style={styles.sortButton} onPress={toggleGridView}>
+            <Icon name={isGridView ? "list" : "th"} size={22} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sortButton} onPress={() => setSortModalVisible(true)}>
+            <Icon name="sort" size={22} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.subHeader}>
@@ -193,10 +277,12 @@ const ListDetailScreen = ({ route }) => {
 
       {sortedMovies.length > 0 ? (
         <FlatList
+          key={isGridView ? 'grid' : 'list'}
           data={sortedMovies}
           keyExtractor={(item) => item.id.toString()}
-          renderItem={renderMovieItem}
-          contentContainerStyle={styles.listContentContainer}
+          renderItem={isGridView ? renderGridItem : renderMovieItem}
+          contentContainerStyle={isGridView ? styles.gridContentContainer : styles.listContentContainer}
+          numColumns={isGridView ? 3 : 1}
         />
       ) : (
         <View style={styles.emptyContainer}>
@@ -226,8 +312,13 @@ const ListDetailScreen = ({ route }) => {
               <TouchableOpacity
                 key={option}
                 style={[styles.modalOption, sortBy === option && styles.selectedOption]}
-                onPress={() => {
+                onPress={async () => {
                   setSortBy(option);
+                  try {
+                    await AsyncStorage.setItem(`sortOrderListDetail_${listId}`, option);
+                  } catch (e) {
+                    console.error("Failed to save sort order.", e);
+                  }
                   setSortModalVisible(false);
                 }}
               >
@@ -327,6 +418,52 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#FFFFFF',
   },
+  gridContentContainer: {
+    paddingHorizontal: 10,
+    paddingBottom: 20,
+  },
+  gridItemContainer: {
+    flex: 1,
+    margin: 6,
+    overflow: 'visible',
+  },
+  gridPosterImage: {
+    width: '100%',
+    aspectRatio: 2 / 3,
+    borderRadius: 8,
+    resizeMode: 'cover',
+    backgroundColor: '#333',
+  },
+  gridItemFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  gridFooterRankText: {
+    color: '#ff8c00', // Brand Orange
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  gridFooterRatingText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  gridRatingBadge: {
+    backgroundColor: '#ff8c00', // Brand Orange
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gridRatingText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -368,11 +505,14 @@ const styles = StyleSheet.create({
     padding: 10,
     zIndex: 10,
   },
-  sortButton: {
+  headerButtonsContainer: {
     position: 'absolute',
     right: 15,
-    padding: 10,
+    flexDirection: 'row',
     zIndex: 10,
+  },
+  sortButton: {
+    padding: 10,
   },
   listNameTitle: {
     fontSize: 20,

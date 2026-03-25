@@ -465,18 +465,26 @@ const AdminAwardsScreen = () => {
         if (!selectedEvent || !selectedCategory) return;
 
         // Check if already is winner to toggle off (optional, or just re-set)
-        // Check new winnerId first, fallback to winnerTmdbId
-        const isCurrentWinner = selectedCategory.winnerId
-            ? selectedCategory.winnerId === nomineeId
-            : selectedCategory.winnerTmdbId === nomineeId;
+        // Ensure winnerIds exists as array. Backwards compatibility for single winner string
+        let currentWinners = selectedCategory.winnerIds || [];
+        if (!selectedCategory.winnerIds && (selectedCategory.winnerId || selectedCategory.winnerTmdbId)) {
+            currentWinners = [selectedCategory.winnerId || selectedCategory.winnerTmdbId];
+        }
 
-        const newWinnerId = isCurrentWinner ? null : nomineeId;
+        const isCurrentWinner = currentWinners.includes(nomineeId);
+        let newWinnerIds;
+
+        if (isCurrentWinner) {
+            newWinnerIds = currentWinners.filter(id => id !== nomineeId);
+        } else {
+            newWinnerIds = [...currentWinners, nomineeId];
+        }
 
         try {
-            await markCategoryWinner(selectedEvent.id, selectedCategory.id, newWinnerId);
+            await markCategoryWinner(selectedEvent.id, selectedCategory.id, newWinnerIds);
 
             // Local update
-            const updatedCat = { ...selectedCategory, winnerId: newWinnerId };
+            const updatedCat = { ...selectedCategory, winnerIds: newWinnerIds };
             const updatedEvent = {
                 ...selectedEvent,
                 categories: selectedEvent.categories.map(c => c.id === selectedCategory.id ? updatedCat : c)
@@ -493,13 +501,15 @@ const AdminAwardsScreen = () => {
     };
 
     const renderNominee = ({ item }) => {
-        // Winner Check: prefer winnerId, fallback to tmdbId
-        const isWinner = selectedCategory?.winnerId
-            ? selectedCategory.winnerId === item.id
-            : selectedCategory?.winnerTmdbId === item.tmdbId;
-
         // Identifier for actions: use unique ID if available, else tmdbId
         const identifier = item.id || item.tmdbId;
+
+        // Winner Check for array (Ties)
+        let currentWinners = selectedCategory?.winnerIds || [];
+        if (!selectedCategory?.winnerIds && (selectedCategory?.winnerId || selectedCategory?.winnerTmdbId)) {
+            currentWinners = [selectedCategory?.winnerId || selectedCategory?.winnerTmdbId];
+        }
+        const isWinner = currentWinners.includes(identifier) || currentWinners.includes(item.tmdbId);
 
         return (
             <View style={[styles.nomineeItem, isWinner && { borderColor: '#FFD700', borderWidth: 2, backgroundColor: '#2a2a00' }]}>
