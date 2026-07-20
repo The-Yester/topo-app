@@ -624,61 +624,6 @@ const ProfileSettings = ({ navigation }) => {
 
                 <View style={styles.separator} />
 
-                {/* Social Network */}
-                <View style={styles.section}>
-                    <Text style={styles.label}>My Network</Text>
-                    <View style={styles.statsRow}>
-                        <TouchableOpacity
-                            style={styles.statItem}
-                            onPress={() => navigation.navigate('FollowList', {
-                                title: 'Following',
-                                userList: following,
-                                currentUserId: auth.currentUser.uid, // Pass current ID 
-                                isOwnFollowing: true // Enable Unfollow
-                            })}
-                        >
-                            <Text style={styles.statNum}>{following.length}</Text>
-                            <Text style={styles.statLabel}>Following</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={styles.statItem}
-                            onPress={() => navigation.navigate('FollowList', {
-                                title: 'Followers',
-                                userList: followers,
-                                currentUserId: auth.currentUser.uid,
-                                isOwnFollowers: true // Enable removal
-                            })}
-                        >
-                            <Text style={styles.statNum}>{followers.length}</Text>
-                            <Text style={styles.statLabel}>Followers</Text>
-                        </TouchableOpacity>
-                    </View>
-                    <TouchableOpacity style={styles.outlineButton} onPress={() => setIsFriendModalVisible(true)}>
-                        <Text style={styles.outlineButtonText}>Find Friends</Text>
-                    </TouchableOpacity>
-
-                    <Text style={[styles.label, { marginTop: 20 }]}>Top 4 Friends</Text>
-                    <Text style={styles.subLabel}>Tap friends in the "Find" modal to add them here.</Text>
-                    <View style={styles.topFriendsGrid}>
-                        {((hydratedTopFriends.length > 0 ? hydratedTopFriends : topFriends)).length > 0 ? (
-                            (hydratedTopFriends.length > 0 ? hydratedTopFriends : topFriends).map(item => (
-                                <View key={item.uid} style={styles.topFriendItemGrid}>
-                                    <Image source={item.profilePhoto ? { uri: item.profilePhoto } : require('../assets/profile_placeholder.jpg')} style={styles.topFriendImg} />
-                                    <TouchableOpacity style={styles.removeFriendBadge} onPress={() => toggleTopFriend(item)}>
-                                        <Icon name="times" size={10} color="#fff" />
-                                    </TouchableOpacity>
-                                    <Text style={styles.topFriendName} numberOfLines={1}>{item.username}</Text>
-                                </View>
-                            ))
-                        ) : (
-                            <Text style={{ color: '#666', fontStyle: 'italic', width: '100%' }}>No Top Friends selected.</Text>
-                        )}
-                    </View>
-                </View>
-
-                <View style={styles.separator} />
-
                 {/* Notifications */}
                 <View style={[styles.section, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
                     <Text style={[styles.label, { marginBottom: 0 }]}>Push Notifications</Text>
@@ -693,31 +638,6 @@ const ProfileSettings = ({ navigation }) => {
 
                 <View style={styles.separator} />
 
-                {/* Rating System */}
-                <View style={styles.section}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={[styles.label, { marginBottom: 0 }]}>Preferred Rating System</Text>
-                        <TouchableOpacity
-                            style={{ flexDirection: 'row', alignItems: 'center' }}
-                            onPress={() => navigation.navigate('RatingInstructions')}
-                        >
-                            <Icon name="info-circle" size={16} color="#ff8c00" style={{ marginRight: 5 }} />
-                            <Text style={{ color: '#ff8c00', fontSize: 12, fontWeight: 'bold' }}>Instructions</Text>
-                        </TouchableOpacity>
-                    </View>
-                    <View style={styles.pickerWrapper}>
-                        <Picker
-                            selectedValue={selectedRatingSystem}
-                            onValueChange={setSelectedRatingSystem}
-                            style={styles.picker}
-                        >
-                            {ratingMethods.map((m) => (
-                                <Picker.Item key={m.id} label={m.name} value={m.id} color="#000" />
-                            ))}
-                        </Picker>
-                    </View>
-                </View>
-
                 {/* Password - Keeping simplified for layout */}
                 <TouchableOpacity style={styles.passwordButton} onPress={() => { Alert.alert("Not Implemented in Prototype", "Use real auth for this.") }}>
                     <Icon name="lock" size={20} color="#ff8c00" style={{ marginRight: 10 }} />
@@ -725,31 +645,6 @@ const ProfileSettings = ({ navigation }) => {
                 </TouchableOpacity>
 
                 <View style={styles.separator} />
-
-                {/* Top 8 */}
-                <View style={styles.section}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <Text style={styles.label}>My Top 8 Movies</Text>
-                        {topMovies.length < 8 && (
-                            <TouchableOpacity onPress={() => setIsSearchModalVisible(true)}>
-                                <Icon name="plus-circle" size={24} color="#ff8c00" />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                    <FlatList
-                        horizontal
-                        data={topMovies}
-                        keyExtractor={item => item.id.toString()}
-                        renderItem={({ item }) => (
-                            <TouchableOpacity style={styles.top8Item} onPress={() => removeTopMovie(item.id)}>
-                                <Image source={{ uri: `https://image.tmdb.org/t/p/w200${item.poster_path}` }} style={styles.top8Image} />
-                                <View style={styles.removeBadge}>
-                                    <Icon name="times" size={10} color="#fff" />
-                                </View>
-                            </TouchableOpacity>
-                        )}
-                    />
-                </View>
 
                 {/* About Section */}
                 <View style={styles.section}>
@@ -790,7 +685,7 @@ const ProfileSettings = ({ navigation }) => {
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteAccount}>
-                        <Text style={styles.deleteText}>Deactivate Account</Text>
+                        <Text style={styles.deleteText}>Delete Account</Text>
                     </TouchableOpacity>
                 </View>
 

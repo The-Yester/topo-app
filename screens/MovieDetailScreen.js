@@ -21,7 +21,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { MoviesContext } from '../context/MoviesContext';
 import { getMovieDetails } from '../api/MovieService';
-import { doc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, setDoc, collection, addDoc, query, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
@@ -52,6 +52,56 @@ const MovieDetailScreen = ({ route }) => {
     const [reviewModalVisible, setReviewModalVisible] = useState(false);
     const [listModalVisible, setListModalVisible] = useState(false);
     const [isWatched, setIsWatched] = useState(false); 
+    const [listsSortOrder, setListsSortOrder] = useState('asc'); // Default to A-Z / numeric asc
+
+    // Load persisted list sort order when list modal is shown
+    useEffect(() => {
+        if (!listModalVisible) return;
+        const loadListSortOrder = async () => {
+            try {
+                let savedOrder = await AsyncStorage.getItem('sortOrderLists');
+                if (!savedOrder) {
+                    const user = auth.currentUser;
+                    if (user) {
+                        const userSnap = await getDoc(doc(db, "users", user.uid));
+                        if (userSnap.exists() && userSnap.data().movieListsSortOrder) {
+                            savedOrder = userSnap.data().movieListsSortOrder;
+                        }
+                    }
+                }
+                if (savedOrder) {
+                    setListsSortOrder(savedOrder);
+                }
+            } catch (e) {
+                console.error("Error loading list sort order in MovieDetailScreen:", e);
+            }
+        };
+        loadListSortOrder();
+    }, [listModalVisible]);
+
+    const sortedMovieLists = React.useMemo(() => {
+        if (!movieLists) return [];
+        const LOCKED_ORDER = ["Favorites", "Watch Later"];
+        const locked = [];
+        const custom = [];
+
+        movieLists.forEach(list => {
+            if (LOCKED_ORDER.includes(list.name)) {
+                locked.push(list);
+            } else {
+                custom.push(list);
+            }
+        });
+
+        locked.sort((a, b) => LOCKED_ORDER.indexOf(a.name) - LOCKED_ORDER.indexOf(b.name));
+
+        custom.sort((a, b) => {
+            const compare = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+            return listsSortOrder === 'desc' ? -compare : compare;
+        });
+
+        return [...locked, ...custom];
+    }, [movieLists, listsSortOrder]);
 
     // Ticket Stub Minting State
     const [isMinting, setIsMinting] = useState(false);
@@ -394,18 +444,23 @@ const MovieDetailScreen = ({ route }) => {
         calculateMaxRatingSystem();
     }, [ratingMethod, userRating]);
 
-    // Load Reviews
+    // Load Reviews (Live from Firestore)
     useEffect(() => {
         if (!movieId) return;
-        const loadReviews = async () => {
-            try {
-                const storedReviews = await AsyncStorage.getItem(`reviews_${movieId}`);
-                if (storedReviews) setReviews(JSON.parse(storedReviews));
-            } catch (error) {
-                console.error("Error loading reviews:", error);
-            }
-        };
-        loadReviews();
+        const reviewsRef = collection(db, "movies", String(movieId), "reviews");
+        const q = query(reviewsRef, orderBy("createdAt", "asc"));
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedReviews = [];
+            snapshot.forEach((docSnap) => {
+                fetchedReviews.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            setReviews(fetchedReviews);
+        }, (error) => {
+            console.error("Error loading live reviews:", error);
+        });
+
+        return () => unsubscribe();
     }, [movieId]);
 
     // Load Current User (FIXED: From Firestore)
@@ -434,22 +489,27 @@ const MovieDetailScreen = ({ route }) => {
             Alert.alert("Error", "Please write a review.");
             return;
         }
+        if (!auth.currentUser) {
+            Alert.alert("Login Required", "You must be logged in to leave a review.");
+            return;
+        }
         try {
-            const newReview = {
-                id: Date.now(),
+            const reviewsRef = collection(db, "movies", String(movieId), "reviews");
+            await addDoc(reviewsRef, {
                 text: reviewText,
-                user: currentUser?.username || "Anonymous", // Uses Firestore username
-                userId: currentUser?.uid
-            };
-            const updatedReviews = [...reviews, newReview];
-            await AsyncStorage.setItem(`reviews_${movieId}`, JSON.stringify(updatedReviews));
-            setReviews(updatedReviews);
+                user: currentUser?.username || "Anonymous",
+                userId: auth.currentUser.uid,
+                profilePhoto: currentUser?.profilePhoto || null,
+                createdAt: serverTimestamp()
+            });
+            
+            // setReviews is automatically handled by the onSnapshot listener!
             setReviewModalVisible(false);
             setReviewText('');
-            Alert.alert("Success", "Your review has been saved.");
+            Alert.alert("Success", "Your review has been published!");
         } catch (error) {
-            console.error("Error saving review:", error);
-            Alert.alert("Error", "Failed to save review.");
+            console.error("Error publishing review:", error);
+            Alert.alert("Error", "Failed to publish review.");
         }
     };
 
@@ -808,7 +868,7 @@ const MovieDetailScreen = ({ route }) => {
                         <Text style={styles.modalTitle}>Select a List</Text>
                         <View style={{ width: '100%', maxHeight: 300 }}>
                             <FlatList
-                                data={movieLists}
+                                data={sortedMovieLists}
                                 keyExtractor={item => item.id.toString()}
                                 renderItem={({ item }) => (
                                     <TouchableOpacity
@@ -1126,23 +1186,23 @@ const MovieDetailScreen = ({ route }) => {
                 visible={!!mintedStub}
                 onRequestClose={() => setMintedStub(null)}
             >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.ratingModalContent, { alignItems: 'center', backgroundColor: '#111', padding: 25 }]}>
+                <SafeAreaView style={styles.modalOverlay}>
+                    <View style={[styles.ratingModalContent, { alignItems: 'center', backgroundColor: '#111', padding: 25, maxHeight: '85%' }]}>
                         <Text style={[styles.modalTitle, { color: '#FFD700', fontSize: 24, marginBottom: 5 }]}>Check-In Verified!</Text>
                         <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
-                            You secured a {mintedStub?.rarityTier} stub at {mintedStub?.theaterName}.
+                            You secured a {mintedStub?.rarityTier} stub at {mintedStub?.theaterName} (+{mintedStub?.pointsEarned || 10} PTS).
                         </Text>
                         
                         {mintedStub && <TicketStubCard stubData={mintedStub} />}
 
                         <TouchableOpacity 
-                            style={[styles.modalButton, { backgroundColor: '#e50914', marginTop: 30, width: '80%' }]}
+                            style={[styles.modalButton, { backgroundColor: '#ff8c00', marginTop: 30, width: '80%', borderRadius: 25, paddingVertical: 15, elevation: 5, alignItems: 'center', justifyContent: 'center' }]}
                             onPress={() => setMintedStub(null)}
                         >
-                            <Text style={styles.modalButtonText}>Add to Wallet</Text>
+                            <Text style={[styles.modalButtonText, { fontWeight: '900', fontSize: 16, color: '#fff', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'center' }]}>Collect Stub</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
+                </SafeAreaView>
             </Modal>
 
             {/* Friendzy Theater Trip Invite Modal */}
@@ -1152,7 +1212,7 @@ const MovieDetailScreen = ({ route }) => {
                 visible={tripModalVisible}
                 onRequestClose={() => setTripModalVisible(false)}
             >
-                <View style={styles.modalOverlay}>
+                <SafeAreaView style={styles.modalOverlay}>
                     <View style={[styles.ratingModalContent, { backgroundColor: '#222', maxHeight: '80%', padding: 20 }]}>
                         <Text style={[styles.modalTitle, { color: '#FFD700', fontSize: 24, marginBottom: 5 }]}>Plan a Theater Trip</Text>
                         <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 15, textAlign: 'center' }}>
@@ -1201,7 +1261,7 @@ const MovieDetailScreen = ({ route }) => {
                             </TouchableOpacity>
                         </View>
                     </View>
-                </View>
+                </SafeAreaView>
             </Modal>
 
             {/* Toast Notification */}
@@ -1217,6 +1277,17 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#0a0a1a', // Dark theme background
         paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    ratingModalContent: {
+        width: '90%',
+        borderRadius: 15,
+        overflow: 'hidden',
     },
     headerBar: {
         flexDirection: 'row',

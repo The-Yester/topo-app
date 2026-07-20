@@ -1,11 +1,13 @@
-import React, { useContext, useMemo, useLayoutEffect, useState } from 'react';
+import React, { useContext, useMemo, useLayoutEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, Alert, Modal, SafeAreaView, Platform, StatusBar, Share, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { MoviesContext } from '../context/MoviesContext'; // Adjust path as needed
-import { useNavigation } from '@react-navigation/native'; // Import useNavigation
+import { useNavigation, useFocusEffect } from '@react-navigation/native'; // Import useNavigation & useFocusEffect
+import { auth, db } from '../firebaseConfig';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 // Define the name of your special, non-deletable list
 const OVERALL_RATINGS_LIST_NAME = "Overall Ratings"; // Or "Overall Rank" if that's what you use
@@ -23,27 +25,47 @@ const ListDetailScreen = ({ route }) => {
   const [isGridView, setIsGridView] = useState(false); // Toggle for grid view
   const [isLoadingPreferences, setIsLoadingPreferences] = useState(true); // Prevent UI flash
 
-  // Load persisted view and sort logic
-  React.useEffect(() => {
-    const loadPreferences = async () => {
-      try {
-        const savedSortBy = await AsyncStorage.getItem(`sortOrderListDetail_${listId}`);
-        if (savedSortBy !== null) {
-          setSortBy(savedSortBy);
-        }
+  // Load persisted view and sort logic on focus
+  useFocusEffect(
+    useCallback(() => {
+      const loadPreferences = async () => {
+        try {
+          // 1. Per-list saved sort order
+          let savedSortBy = await AsyncStorage.getItem(`sortOrderListDetail_${listId}`);
 
-        const savedGridView = await AsyncStorage.getItem(`isGridViewListDetail_${listId}`);
-        if (savedGridView !== null) {
-          setIsGridView(savedGridView === 'true');
+          // 2. Global saved list sort order
+          if (!savedSortBy) {
+            savedSortBy = await AsyncStorage.getItem('globalListSortBy');
+          }
+
+          // 3. Firestore saved preference
+          if (!savedSortBy) {
+            const user = auth.currentUser;
+            if (user) {
+              const userSnap = await getDoc(doc(db, "users", user.uid));
+              if (userSnap.exists() && userSnap.data().preferredListSort) {
+                savedSortBy = userSnap.data().preferredListSort;
+              }
+            }
+          }
+
+          if (savedSortBy !== null && savedSortBy !== undefined) {
+            setSortBy(savedSortBy);
+          }
+
+          const savedGridView = await AsyncStorage.getItem(`isGridViewListDetail_${listId}`);
+          if (savedGridView !== null) {
+            setIsGridView(savedGridView === 'true');
+          }
+        } catch (e) {
+          console.error("Failed to load list details preferences.", e);
+        } finally {
+          setIsLoadingPreferences(false);
         }
-      } catch (e) {
-        console.error("Failed to load list details preferences.", e);
-      } finally {
-        setIsLoadingPreferences(false);
-      }
-    };
-    loadPreferences();
-  }, [listId]);
+      };
+      loadPreferences();
+    }, [listId])
+  );
 
   const toggleGridView = async () => {
     const newValue = !isGridView;
@@ -316,6 +338,14 @@ const ListDetailScreen = ({ route }) => {
                   setSortBy(option);
                   try {
                     await AsyncStorage.setItem(`sortOrderListDetail_${listId}`, option);
+                    await AsyncStorage.setItem('globalListSortBy', option);
+
+                    const user = auth.currentUser;
+                    if (user) {
+                      await updateDoc(doc(db, "users", user.uid), {
+                        preferredListSort: option
+                      });
+                    }
                   } catch (e) {
                     console.error("Failed to save sort order.", e);
                   }

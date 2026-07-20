@@ -2,7 +2,7 @@
   "expo": {
     "name": "TOPO",
     "slug": "topo",
-    "version": "2.0.0",
+    "version": "2.0.5",
     "platforms": [
       "ios",
       "android"
@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ryester.topo",
-      "buildNumber": "20",
+      "buildNumber": "25",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "TOPO requires your location to verify when you are at a movie theater to unlock exclusive Digital Ticket Stubs."
@@ -35,7 +35,7 @@
         "ACCESS_FINE_LOCATION"
       ],
       "package": "com.ryester.topo",
-      "versionCode": 10
+      "versionCode": 25
     },
     "extra": {
       "eas": {

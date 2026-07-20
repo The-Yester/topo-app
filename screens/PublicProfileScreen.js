@@ -526,7 +526,7 @@ const PublicProfileScreen = () => {
                 {ticketWallet.length > 0 && (
                     <>
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>{userData.username}'s Ticket Wallet</Text>
+                            <Text style={styles.sectionTitle}>Ticket Wallet</Text>
                             <FlatList
                                 horizontal
                                 data={ticketWallet}
@@ -534,7 +534,10 @@ const PublicProfileScreen = () => {
                                 showsHorizontalScrollIndicator={false}
                                 contentContainerStyle={{ paddingHorizontal: 10 }}
                                 renderItem={({ item }) => (
-                                    <TicketStubCard stubData={item} />
+                                    <View style={{ alignItems: 'center', marginHorizontal: 5 }}>
+                                        <TicketStubCard stubData={item} widthScale={0.35} />
+                                        <Text style={{ color: '#ff8c00', marginTop: 1, fontWeight: 'bold', fontSize: 13 }}>{item.pointsEarned || 10} PTS</Text>
+                                    </View>
                                 )}
                             />
                         </View>

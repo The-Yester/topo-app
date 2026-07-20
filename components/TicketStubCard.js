@@ -1,18 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Image, Dimensions, Animated, TouchableOpacity } from 'react-native';
 import { DeviceMotion } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.45;
-const CARD_HEIGHT = CARD_WIDTH * 1.5;
 
-const TicketStubCard = ({ stubData }) => {
+const TicketStubCard = ({ stubData, widthScale = 0.45 }) => {
     const { movieTitle, poster_path, theaterName, mintDate, rarityTier } = stubData;
+    
+    const CARD_WIDTH = width * widthScale;
+    const CARD_HEIGHT = CARD_WIDTH * 1.5;
     
     // Gyroscope tracking for Holographic shine
     const [tiltX, setTiltX] = useState(0);
     const [tiltY, setTiltY] = useState(0);
+
+    // 3D Flip Animation capability
+    const spinValue = React.useRef(new Animated.Value(0)).current;
+    const [isFlipped, setIsFlipped] = useState(false);
+
+    const flipCard = () => {
+        setIsFlipped(!isFlipped);
+        Animated.spring(spinValue, {
+            toValue: isFlipped ? 0 : 1,
+            friction: 8,
+            tension: 10,
+            useNativeDriver: true
+        }).start();
+    };
+
+    const frontInterpolate = spinValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0deg', '180deg']
+    });
+
+    const backInterpolate = spinValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['180deg', '360deg']
+    });
 
     useEffect(() => {
         let subscription;
@@ -70,52 +95,71 @@ const TicketStubCard = ({ stubData }) => {
         }
     };
 
-    return (
-        <View style={[styles.cardContainer, { borderColor: getBorderColor() }]}>
-            {/* Base Poster */}
-            <Image source={{ uri: posterUrl }} style={styles.poster} />
-            
-            {/* Dynamic Sensor Gradient Overlay */}
-            <LinearGradient
-                colors={getGradientColors()}
-                start={{ x: 0.5 + tiltX, y: 0.5 + tiltY }}
-                end={{ x: 1 - tiltX, y: 1 - tiltY }}
-                style={styles.shinyOverlay}
-            />
+    const getBackgroundImage = () => {
+        if (rarityTier === 'Holographic') return require('../assets/holo_tier_back.jpg');
+        if (rarityTier === 'Gold') return require('../assets/gold_holo_back.jpg');
+        return require('../assets/holo_back.jpg');
+    };
 
-            {/* Ticket Information Footer */}
-            <View style={styles.footer}>
-                <Text style={styles.title} numberOfLines={1}>{movieTitle}</Text>
-                <View style={styles.divider} />
-                <Text style={styles.theaterText} numberOfLines={1}>{theaterName}</Text>
-                <View style={styles.dateRow}>
-                    <Text style={styles.dateText}>{formattedDate}</Text>
-                    <Text style={[styles.tierBadge, { color: getBorderColor() }]}>{rarityTier}</Text>
-                </View>
+    return (
+        <TouchableOpacity activeOpacity={1} onPress={flipCard}>
+            <View style={{ width: CARD_WIDTH, height: CARD_HEIGHT, margin: 8 }}>
+                {/* Back Face */}
+                    <Animated.View style={[styles.cardSide, { transform: [{ rotateY: backInterpolate }] }]}>
+                    <View style={[{ width: CARD_WIDTH, height: CARD_HEIGHT, backgroundColor: '#111', borderRadius: 12, borderWidth: 2, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 5 }, { borderColor: getBorderColor() }]}>
+                        <Image source={getBackgroundImage()} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                        <LinearGradient
+                            colors={getGradientColors()}
+                            start={{ x: 0.5 + tiltX, y: 0.5 + tiltY }}
+                            end={{ x: 1 - tiltX, y: 1 - tiltY }}
+                            style={styles.shinyOverlay}
+                        />
+                    </View>
+                </Animated.View>
+
+                {/* Front Face */}
+                <Animated.View style={[styles.cardSide, { transform: [{ rotateY: frontInterpolate }] }]}>
+                    <View style={[{ width: CARD_WIDTH, height: CARD_HEIGHT, backgroundColor: '#111', borderRadius: 12, borderWidth: 2, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 5 }, { borderColor: getBorderColor() }]}>
+                        <Image source={{ uri: posterUrl }} style={styles.poster} />
+                        
+                        {/* Dynamic Sensor Gradient Overlay */}
+                        <LinearGradient
+                            colors={getGradientColors()}
+                            start={{ x: 0.5 + tiltX, y: 0.5 + tiltY }}
+                            end={{ x: 1 - tiltX, y: 1 - tiltY }}
+                            style={styles.shinyOverlay}
+                        />
+
+                        {/* Ticket Information Footer */}
+                        <View style={styles.footer}>
+                            <Text style={styles.title} numberOfLines={1}>{movieTitle}</Text>
+                            <View style={styles.divider} />
+                            <Text style={styles.theaterText} numberOfLines={1}>{theaterName}</Text>
+                            <View style={styles.dateRow}>
+                                <Text style={styles.dateText}>{formattedDate}</Text>
+                                <Text style={[styles.tierBadge, { color: getBorderColor() }]}>{rarityTier}</Text>
+                            </View>
+                        </View>
+                    </View>
+                </Animated.View>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 };
 
 const styles = StyleSheet.create({
-    cardContainer: {
-        width: CARD_WIDTH,
-        height: CARD_HEIGHT,
-        backgroundColor: '#111',
-        borderRadius: 12,
-        borderWidth: 2,
-        overflow: 'hidden',
-        margin: 8,
-        elevation: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.5,
-        shadowRadius: 5,
-    },
     poster: {
         width: '100%',
         height: '70%',
         resizeMode: 'cover',
+    },
+    cardSide: {
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        backfaceVisibility: 'hidden',
     },
     shinyOverlay: {
         ...StyleSheet.absoluteFillObject,

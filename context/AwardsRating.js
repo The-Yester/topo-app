@@ -56,13 +56,20 @@ const DOCUMENTARY_CATEGORIES = [
 ];
 
 // Memoized Row Component to ensure smooth slider performance
-const CategoryRow = memo(({ category, value, onValueChange }) => {
+const CategoryRow = memo(({ category, value, onValueChange, onSlidingStart, onSlidingComplete }) => {
+  const [localValue, setLocalValue] = useState(value);
+
+  // Hydrate local value explicitly if parent force-updates
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
   return (
     <View style={styles.row}>
       <View style={styles.labelContainer}>
         <Text style={styles.categoryLabel}>{category}</Text>
-        <Text style={[styles.valueText, value === 0 && styles.valueTextDisabled]}>
-          {value > 0 ? value.toFixed(1) : "N/A"}
+        <Text style={[styles.valueText, localValue === 0 && styles.valueTextDisabled]}>
+          {localValue > 0 ? localValue.toFixed(1) : "N/A"}
         </Text>
       </View>
 
@@ -71,12 +78,18 @@ const CategoryRow = memo(({ category, value, onValueChange }) => {
           style={{ width: '100%', height: 40 }}
           minimumValue={0}
           maximumValue={10}
-          step={0.1} // Smooth 0.1 increments
-          value={value}
-          onValueChange={onValueChange}
-          minimumTrackTintColor={value > 0 ? COLOR_ACCENT : '#555'}
+          step={0.1}
+          value={localValue}
+          onValueChange={setLocalValue} // Pure 60fps local update without thrashing parent
+          onSlidingStart={onSlidingStart}
+          onSlidingComplete={(val) => {
+            setLocalValue(val);
+            onValueChange(val); // Bubble only the finalized drag value
+            if (onSlidingComplete) onSlidingComplete();
+          }}
+          minimumTrackTintColor={localValue > 0 ? COLOR_ACCENT : '#555'}
           maximumTrackTintColor={COLOR_SLIDER_MAX}
-          thumbTintColor={value > 0 ? COLOR_ACCENT : '#777'}
+          thumbTintColor={localValue > 0 ? COLOR_ACCENT : '#777'}
         />
         <View style={styles.ticksConfig}>
           <Text style={styles.tickLabel}>0</Text>
@@ -94,6 +107,7 @@ const DEFAULT_EXCLUDED = [];
 
 const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFAULT_EXCLUDED, forceKey = 0, initialFilter = 'Movie', children }) => {
   const [activeFilter, setActiveFilter] = useState(initialFilter); // 'Movie', 'Animation', 'Documentary'
+  const [isSliding, setIsSliding] = useState(false); // Helps iOS scroll view blocking
 
   // Initialize with initialRatings immediately to prevent N/A flicker
   const [ratings, setRatings] = useState(() => {
@@ -228,13 +242,20 @@ const AwardsRating = ({ initialRatings = {}, onChange, excludedCategories = DEFA
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} removeClippedSubviews={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        removeClippedSubviews={false}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={!isSliding}
+      >
         {displayCategories.filter(cat => !excludedCategories.includes(cat)).map((category) => (
           <CategoryRow
             key={category}
             category={category}
             value={ratings[category] || 0}
             onValueChange={(val) => handleSliderChange(category, val)}
+            onSlidingStart={() => setIsSliding(true)}
+            onSlidingComplete={() => setIsSliding(false)}
           />
         ))}
         {/* Render buttons or extra content supplied by parent */}

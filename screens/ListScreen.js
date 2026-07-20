@@ -1,18 +1,22 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity, SafeAreaView, Platform, StatusBar, KeyboardAvoidingView } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MoviesContext, OVERALL_RATINGS_LIST_ID, OVERALL_RATINGS_LIST_NAME } from '../context/MoviesContext';
 import { v4 as uuidv4 } from 'uuid';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { auth, db } from '../firebaseConfig';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 // Locked lists that exist in user's movieLists
 const USER_LOCKED_LISTS = ["Favorites", "Watch Later"];
 
 const ListScreen = ({ navigation }) => {
-    const { movieLists, addList, deleteList, addMovieToList, overallRatedMovies } = useContext(MoviesContext);
+    const { movieLists, addList, deleteList, addMovieToList, overallRatedMovies, isDataLoaded } = useContext(MoviesContext);
     const [newListName, setNewListName] = useState('');
 
     useEffect(() => {
+        if (!isDataLoaded) return;
         // Ensure user locked lists exist (Favorites, Watch Later)
         const missingLists = USER_LOCKED_LISTS.filter(listName => 
             !movieLists.some(list => list.name === listName)
@@ -23,23 +27,15 @@ const ListScreen = ({ navigation }) => {
         }));
 
         if (missingLists.length > 0) {
-            // Batch add them all at once to prevent React closure clobbering and queue exhaustion
-            const updatedLists = [...movieLists, ...missingLists];
-            // We can't use `addList` context here directly without mutating Context state sync logic,
-            // but we can call a new context batch func, or just directly trigger saveData by rewriting context or triggering addList safely?
-            // Actually, we can just let MoviesContext handle this. Wait, we can't redefine Context here.
-            // Let's call addList sequentially with a slight delay if missing multiple, or rely on the queue.
-            // But since we disabled long polling, sequential writes are perfectly safe and will batch automatically in Firestore SDK.
             const ensureListsSync = async () => {
                 for (const newList of missingLists) {
                     await new Promise(resolve => setTimeout(resolve, 50)); 
-                    // Slight delay to ensure React state flushes in the addList closure properly
                     addList(newList);
                 }
             };
             ensureListsSync();
         }
-    }, []); // Run ONCE on mount, don't ping-pong if state gets stuck!
+    }, [isDataLoaded]); // Run ONCE on mount, don't ping-pong if state gets stuck!
 
     const handleAddList = () => {
         const trimmedName = newListName.trim();
@@ -80,20 +76,31 @@ const ListScreen = ({ navigation }) => {
     // Sorting state: 'asc' (A-Z / 1-10), 'desc' (Z-A / 10-1), or null (creation order)
     const [sortOrder, setSortOrder] = useState(null);
 
-    // Load persisted sort order on mount
-    useEffect(() => {
-        const loadSortOrder = async () => {
-            try {
-                const savedOrder = await AsyncStorage.getItem('sortOrderLists');
-                if (savedOrder !== null) {
-                    setSortOrder(savedOrder);
+    // Load persisted sort order on focus
+    useFocusEffect(
+        React.useCallback(() => {
+            const loadSortOrder = async () => {
+                try {
+                    let savedOrder = await AsyncStorage.getItem('sortOrderLists');
+                    if (!savedOrder) {
+                        const user = auth.currentUser;
+                        if (user) {
+                            const userSnap = await getDoc(doc(db, "users", user.uid));
+                            if (userSnap.exists() && userSnap.data().movieListsSortOrder) {
+                                savedOrder = userSnap.data().movieListsSortOrder;
+                            }
+                        }
+                    }
+                    if (savedOrder !== null && savedOrder !== undefined) {
+                        setSortOrder(savedOrder);
+                    }
+                } catch (error) {
+                    console.error("Error loading sort order:", error);
                 }
-            } catch (error) {
-                console.error("Error loading sort order:", error);
-            }
-        };
-        loadSortOrder();
-    }, []);
+            };
+            loadSortOrder();
+        }, [])
+    );
 
     const toggleSort = async () => {
         let newOrder = null;
@@ -108,6 +115,13 @@ const ListScreen = ({ navigation }) => {
                 await AsyncStorage.removeItem('sortOrderLists');
             } else {
                 await AsyncStorage.setItem('sortOrderLists', newOrder);
+            }
+
+            const user = auth.currentUser;
+            if (user) {
+                await updateDoc(doc(db, "users", user.uid), {
+                    movieListsSortOrder: newOrder || ''
+                });
             }
         } catch (error) {
             console.error("Error saving sort order:", error);

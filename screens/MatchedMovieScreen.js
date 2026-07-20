@@ -295,7 +295,7 @@ const MatchedMovieScreen = () => {
                         <View style={styles.friendsListContainer}>
                             {following.length === 0 ? (
                                 <Text style={{ color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: 20 }}>
-                                    You aren't following anyone yet. Go to Profile Settings to find friends!
+                                    You aren't following anyone yet. Go to Home to find friends!
                                 </Text>
                             ) : (
                                 <FlatList
