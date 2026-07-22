@@ -126,9 +126,12 @@ const styles = StyleSheet.create({
         alignItems: 'center'
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 24,
         fontWeight: 'bold',
         color: '#fff',
+        fontFamily: 'Trebuchet MS',
+        textTransform: 'uppercase',
+        letterSpacing: 2
     },
     providerListContainer: {
         paddingVertical: 20,

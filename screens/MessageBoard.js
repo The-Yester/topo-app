@@ -13,7 +13,8 @@ import {
     Platform,
     StatusBar,
     Share,
-    Modal
+    Modal,
+    ImageBackground
 } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome'; // Or Ionicons
 import moment from 'moment';
@@ -400,10 +401,13 @@ const MessageBoardScreen = () => {
     return (
         <SafeAreaView style={styles.container}>
             {/* Header */}
-            <View style={styles.headerContainer}>
+            <ImageBackground 
+                source={require('../assets/TOPO_Background_3.4.png')} 
+                style={styles.headerContainer}
+            >
                 <Text style={styles.headerTitle}>Reelz</Text>
-                <Icon name="star-o" size={20} color="#1DA1F2" />
-            </View>
+                <Image source={require('../assets/TOPO_logo_Full.png')} style={styles.logo} />
+            </ImageBackground>
 
             {/* Active Theater Trips Banner */}
             {activeTrips.length > 0 && (
@@ -567,14 +571,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: 15,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#E1E8ED',
-        backgroundColor: '#fff',
+        borderBottomColor: '#222',
     },
     headerTitle: {
-        fontSize: 18,
+        fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: 'Trebuchet MS', // Keeping consistent font
-        color: 'black',
+        fontFamily: 'Trebuchet MS',
+        color: '#fff',
+        textTransform: 'uppercase',
+        letterSpacing: 2
+    },
+    logo: {
+        width: 74,
+        height: 28,
+        resizeMode: 'contain',
     },
     inputSection: {
         flexDirection: 'row',

@@ -219,7 +219,14 @@ const styles = StyleSheet.create({
         backgroundColor: '#0a0a1a',
         paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 16 : 16 // Add extra 16 for standard padding
     },
-    title: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
+    title: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#fff',
+        fontFamily: 'Trebuchet MS',
+        textTransform: 'uppercase',
+        letterSpacing: 2
+    },
     headerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',

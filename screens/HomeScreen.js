@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ScrollView, Dimensions, SafeAreaView, Platform, StatusBar, Modal, TextInput, Alert, PanResponder } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, ScrollView, Dimensions, SafeAreaView, Platform, StatusBar, Modal, TextInput, Alert, PanResponder, Keyboard } from 'react-native';
 import { MoviesContext } from '../context/MoviesContext';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -8,17 +8,20 @@ import { auth, db } from '../firebaseConfig';
 import { doc, onSnapshot, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion } from 'firebase/firestore';
 import { getMovieDetails } from '../api/MovieService'; // Ensure we have this
 import { TMDB_API_KEY } from '../utils/config';
+import { normalizeScore } from '../context/RatingLogic';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const HomeScreen = () => {
-    const { getMoviesInList, recentlyWatched, recentActivity, ratingMethod, setRatingMethod } = useContext(MoviesContext);
+    const { getMoviesInList, recentlyWatched, recentActivity, ratingMethod, setRatingMethod, overallRatedMovies } = useContext(MoviesContext);
     const navigation = useNavigation();
 
     const [userProfile, setUserProfile] = useState(null);
     const [inTheatersMovies, setInTheatersMovies] = useState([]);
     const [showIntroModal, setShowIntroModal] = useState(false);
     const [isRatingModalVisible, setIsRatingModalVisible] = useState(false);
+    const [recommendedMovies, setRecommendedMovies] = useState([]);
+    const [recommendationsLoading, setRecommendationsLoading] = useState(false);
 
     const handleDismissIntro = async () => {
         setShowIntroModal(false);
@@ -33,19 +36,41 @@ const HomeScreen = () => {
         }
     };
 
-    // Derived from Firestore profile data
-    let top8 = [];
-    if (userProfile?.topMovies) {
-        if (Array.isArray(userProfile.topMovies)) {
-            top8 = userProfile.topMovies;
-        } else if (typeof userProfile.topMovies === 'string') {
-            try {
-                top8 = JSON.parse(userProfile.topMovies);
-            } catch (e) {
-                console.error("Error parsing top movies:", e);
+    // State & Refs for Top 8 Favorites and Drag & Drop
+    const [top8, setTop8] = useState([]);
+    const draggingIndexRef = useRef(null);
+    const [draggingIndex, setDraggingIndex] = useState(null);
+    const scrollYRef = useRef(0);
+    const gridYRef = useRef(180);
+    const top8Ref = useRef([]);
+
+    // Keep top8Ref.current updated with top8 state
+    useEffect(() => {
+        top8Ref.current = top8;
+    }, [top8]);
+
+    // Sync local top8 state with userProfile.topMovies when not dragging
+    useEffect(() => {
+        if (userProfile?.topMovies) {
+            let parsed = [];
+            if (Array.isArray(userProfile.topMovies)) {
+                parsed = userProfile.topMovies;
+            } else if (typeof userProfile.topMovies === 'string') {
+                try {
+                    parsed = JSON.parse(userProfile.topMovies);
+                } catch (e) {
+                    console.error("Error parsing top movies:", e);
+                }
+            }
+            if (draggingIndexRef.current === null) {
+                setTop8(parsed);
+            }
+        } else {
+            if (draggingIndexRef.current === null) {
+                setTop8([]);
             }
         }
-    }
+    }, [userProfile?.topMovies]);
 
     // Hydrated Top Friends (Fresh Data)
     const [hydratedTopFriends, setHydratedTopFriends] = useState([]);
@@ -154,6 +179,12 @@ const HomeScreen = () => {
     const [movieSearchQuery, setMovieSearchQuery] = useState('');
     const [movieSearchResults, setMovieSearchResults] = useState([]);
 
+    useEffect(() => {
+        if (!isEditTop8ModalVisible) {
+            scrollYRef.current = 0;
+        }
+    }, [isEditTop8ModalVisible]);
+
     const searchMovies = async (queryText) => {
         setMovieSearchQuery(queryText);
         if (!queryText.trim()) {
@@ -174,19 +205,12 @@ const HomeScreen = () => {
     const addTopMovie = async (movie) => {
         const user = auth.currentUser;
         if (!user) return;
-        let currentTop8 = [];
-        if (userProfile?.topMovies) {
-            if (Array.isArray(userProfile.topMovies)) {
-                currentTop8 = [...userProfile.topMovies];
-            } else if (typeof userProfile.topMovies === 'string') {
-                try { currentTop8 = JSON.parse(userProfile.topMovies); } catch (e) {}
-            }
-        }
-        if (currentTop8.length >= 8) {
+
+        if (top8.length >= 8) {
             Alert.alert("Limit Reached", "You can only select up to 8 favorite movies.");
             return;
         }
-        if (currentTop8.some(m => m.id === movie.id)) {
+        if (top8.some(m => m.id === movie.id)) {
             Alert.alert("Duplicate", "This movie is already in your Top 8.");
             return;
         }
@@ -197,13 +221,16 @@ const HomeScreen = () => {
             poster_path: movie.poster_path
         };
 
-        const updatedTop8 = [...currentTop8, minimalMovie];
+        const updatedTop8 = [...top8, minimalMovie];
+        setTop8(updatedTop8);
+        setMovieSearchQuery('');
+        setMovieSearchResults([]);
+        Keyboard.dismiss();
+
         try {
             await updateDoc(doc(db, "users", user.uid), {
                 topMovies: updatedTop8
             });
-            setMovieSearchQuery('');
-            setMovieSearchResults([]);
         } catch (e) {
             console.error("Error updating top movies:", e);
         }
@@ -212,15 +239,10 @@ const HomeScreen = () => {
     const removeTopMovie = async (movieId) => {
         const user = auth.currentUser;
         if (!user) return;
-        let currentTop8 = [];
-        if (userProfile?.topMovies) {
-            if (Array.isArray(userProfile.topMovies)) {
-                currentTop8 = [...userProfile.topMovies];
-            } else if (typeof userProfile.topMovies === 'string') {
-                try { currentTop8 = JSON.parse(userProfile.topMovies); } catch (e) {}
-            }
-        }
-        const updatedTop8 = currentTop8.filter(m => m.id !== movieId);
+
+        const updatedTop8 = top8.filter(m => m.id !== movieId);
+        setTop8(updatedTop8);
+
         try {
             await updateDoc(doc(db, "users", user.uid), {
                 topMovies: updatedTop8
@@ -230,21 +252,15 @@ const HomeScreen = () => {
         }
     };
 
-    const moveTopMovie = async (fromIndex, toIndex) => {
-        if (toIndex < 0 || toIndex >= top8.length) return;
+    const saveTopMoviesToFirestore = async (updatedList) => {
         const user = auth.currentUser;
         if (!user) return;
-
-        const updatedTop8 = [...top8];
-        const [movedItem] = updatedTop8.splice(fromIndex, 1);
-        updatedTop8.splice(toIndex, 0, movedItem);
-
         try {
             await updateDoc(doc(db, "users", user.uid), {
-                topMovies: updatedTop8
+                topMovies: updatedList
             });
         } catch (e) {
-            console.error("Error reordering top movies:", e);
+            console.error("Error saving top movies reorder:", e);
         }
     };
 
@@ -266,36 +282,50 @@ const HomeScreen = () => {
     };
 
     // Grab & Drop Drag State & Logic
-    const [draggingIndex, setDraggingIndex] = useState(null);
-    const gridYRef = useRef(180);
-    const top8Ref = useRef(top8);
-    top8Ref.current = top8;
-
     const createPanResponder = (index) => {
         return PanResponder.create({
             onStartShouldSetPanResponder: () => true,
             onMoveShouldSetPanResponder: () => true,
             onPanResponderGrant: () => {
+                draggingIndexRef.current = index;
                 setDraggingIndex(index);
             },
             onPanResponderMove: (evt, gestureState) => {
+                const currentIndex = draggingIndexRef.current;
+                if (currentIndex === null) return;
+
                 const moveX = gestureState.moveX;
                 const moveY = gestureState.moveY;
 
                 const col = moveX > (SCREEN_WIDTH / 2) ? 1 : 0;
                 const cardHeight = ((SCREEN_WIDTH - 55) / 2) * 1.48 + 45;
-                const relativeY = moveY - gridYRef.current;
+                const relativeY = moveY - (gridYRef.current - scrollYRef.current);
                 const row = Math.max(0, Math.floor(relativeY / cardHeight));
                 const targetIndex = Math.max(0, Math.min(top8Ref.current.length - 1, row * 2 + col));
 
-                if (targetIndex !== index && targetIndex >= 0 && targetIndex < top8Ref.current.length) {
-                    moveTopMovie(index, targetIndex);
+                if (targetIndex !== currentIndex && targetIndex >= 0 && targetIndex < top8Ref.current.length) {
+                    // Update the ref first so subsequent move events see the new index immediately
+                    draggingIndexRef.current = targetIndex;
+                    setDraggingIndex(targetIndex);
+
+                    // Reorder the local array
+                    const updatedTop8 = [...top8Ref.current];
+                    const [movedItem] = updatedTop8.splice(currentIndex, 1);
+                    updatedTop8.splice(targetIndex, 0, movedItem);
+
+                    // Update state & ref
+                    setTop8(updatedTop8);
+                    top8Ref.current = updatedTop8;
                 }
             },
             onPanResponderRelease: () => {
+                saveTopMoviesToFirestore(top8Ref.current);
+                draggingIndexRef.current = null;
                 setDraggingIndex(null);
             },
             onPanResponderTerminate: () => {
+                saveTopMoviesToFirestore(top8Ref.current);
+                draggingIndexRef.current = null;
                 setDraggingIndex(null);
             }
         });
@@ -358,6 +388,203 @@ const HomeScreen = () => {
         };
         loadInTheaters();
     }, []);
+
+    // Load recommendations based on community highly-rated movies and genre preferences
+    const loadRecommendations = async () => {
+        const currentUser = auth.currentUser;
+        if (!currentUser) return;
+
+        setRecommendationsLoading(true);
+
+        try {
+            // 1. Identify current user's high-rated movies (normalized score >= 70)
+            const myHighRated = overallRatedMovies.filter(m => {
+                const rawScore = m.userOverallRating || m.userRating;
+                if (rawScore === undefined || rawScore === null) return false;
+                const method = m.ratingMethod || ratingMethod || '1-10';
+                return normalizeScore(method, rawScore) >= 70;
+            });
+
+            // 2. Fetch TMDB details for the top 3 highest-rated movies to build the user's favorite genres profile
+            const topRatedToQuery = [...myHighRated]
+                .sort((a, b) => {
+                    const scoreA = normalizeScore(a.ratingMethod || ratingMethod || '1-10', a.userOverallRating || a.userRating || 0);
+                    const scoreB = normalizeScore(b.ratingMethod || ratingMethod || '1-10', b.userOverallRating || b.userRating || 0);
+                    return scoreB - scoreA;
+                })
+                .slice(0, 3);
+
+            const genreCounts = {};
+            const ratedMovieIds = new Set(overallRatedMovies.map(m => m.id));
+            const top8Ids = new Set(top8.map(m => m.id));
+
+            for (const movie of topRatedToQuery) {
+                try {
+                    const res = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}`);
+                    const details = await res.json();
+                    if (details && details.genres) {
+                        details.genres.forEach(g => {
+                            genreCounts[g.id] = (genreCounts[g.id] || 0) + 1;
+                        });
+                    }
+                } catch (e) {
+                    console.error("Error fetching TMDB genres for movie:", movie.id, e);
+                }
+            }
+
+            // Get the user's top favorite genres sorted by weight
+            const sortedGenres = Object.entries(genreCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(entry => Number(entry[0]));
+
+            // 3. Fetch community high-rated movies from other users
+            const communityRatings = {};
+            const usersSnap = await getDocs(collection(db, "users"));
+            
+            usersSnap.forEach((userDoc) => {
+                if (userDoc.id === currentUser.uid) return;
+                const uData = userDoc.data();
+                if (uData.overallRatedMovies && Array.isArray(uData.overallRatedMovies)) {
+                    uData.overallRatedMovies.forEach(m => {
+                        const mId = m.id;
+                        // Avoid recommending movies the current user has already rated/watched or added to top8
+                        if (ratedMovieIds.has(mId) || top8Ids.has(mId)) return;
+
+                        const rawScore = m.userOverallRating || m.userRating;
+                        if (rawScore === undefined || rawScore === null) return;
+                        
+                        const method = m.ratingMethod || uData.ratingMethod || uData.ratingSystem || '1-10';
+                        const normScore = normalizeScore(method, rawScore);
+
+                        if (normScore >= 70) {
+                            if (!communityRatings[mId]) {
+                                communityRatings[mId] = {
+                                    id: mId,
+                                    title: m.title,
+                                    poster_path: m.poster_path,
+                                    communityCount: 0,
+                                    scoreSum: 0,
+                                    release_date: m.release_date || null
+                                };
+                            }
+                            communityRatings[mId].communityCount += 1;
+                            communityRatings[mId].scoreSum += normScore;
+                        }
+                    });
+                }
+            });
+
+            const communityCandidates = Object.values(communityRatings).map(c => ({
+                ...c,
+                avgScore: c.scoreSum / c.communityCount,
+                source: 'community'
+            }));
+
+            // 4. Fetch Global TMDB recommendations (for TMDB backup/hybrid engine)
+            let tmdbCandidates = [];
+            // If the user has high rated movies, fetch recommendations for the top 2
+            const tmdbQueryPool = topRatedToQuery.slice(0, 2);
+            for (const movie of tmdbQueryPool) {
+                try {
+                    const res = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}/recommendations?api_key=${TMDB_API_KEY}&language=en-US&page=1`);
+                    const data = await res.json();
+                    if (data && data.results) {
+                        data.results.forEach(m => {
+                            if (ratedMovieIds.has(m.id) || top8Ids.has(m.id)) return;
+                            tmdbCandidates.push({
+                                id: m.id,
+                                title: m.title,
+                                poster_path: m.poster_path,
+                                genre_ids: m.genre_ids || [],
+                                release_date: m.release_date || null,
+                                vote_average: m.vote_average || 0,
+                                source: 'tmdb_recommendation'
+                            });
+                        });
+                    }
+                } catch (e) {
+                    console.error("Error fetching TMDB recommendations:", e);
+                }
+            }
+
+            // Also query discovery by user's top genres if they have any, or fall back to popular genres
+            const genresQuery = sortedGenres.length > 0 ? sortedGenres.slice(0, 3).join(',') : '18,28,35'; // Drama, Action, Comedy as default
+            try {
+                const res = await fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genresQuery}&sort_by=vote_average.desc&vote_count.gte=1000&language=en-US&page=1`);
+                const data = await res.json();
+                if (data && data.results) {
+                    data.results.forEach(m => {
+                        if (ratedMovieIds.has(m.id) || top8Ids.has(m.id)) return;
+                        tmdbCandidates.push({
+                            id: m.id,
+                            title: m.title,
+                            poster_path: m.poster_path,
+                            genre_ids: m.genre_ids || [],
+                            release_date: m.release_date || null,
+                            vote_average: m.vote_average || 0,
+                            source: 'tmdb_discover'
+                        });
+                    });
+                }
+            } catch (e) {
+                console.error("Error discovering TMDB movies by genre:", e);
+            }
+
+            // 5. Score and Merge Candidates
+            const allCandidatesMap = new Map();
+
+            // Add community candidates with high weight
+            communityCandidates.forEach(c => {
+                allCandidatesMap.set(c.id, {
+                    ...c,
+                    recommendationScore: 100 + (c.communityCount * 15) + (c.avgScore * 0.5),
+                    reason: 'Community Fav'
+                });
+            });
+
+            // Add global candidates
+            tmdbCandidates.forEach(c => {
+                if (allCandidatesMap.has(c.id)) {
+                    const existing = allCandidatesMap.get(c.id);
+                    existing.recommendationScore += 50;
+                    existing.reason = 'Community & Taste Match';
+                } else {
+                    let matchCount = 0;
+                    if (c.genre_ids && sortedGenres.length > 0) {
+                        c.genre_ids.forEach(gId => {
+                            if (sortedGenres.includes(gId)) matchCount++;
+                        });
+                    }
+                    
+                    const reason = matchCount > 0 ? 'Taste Match' : 'Recommended';
+                    allCandidatesMap.set(c.id, {
+                        id: c.id,
+                        title: c.title,
+                        poster_path: c.poster_path,
+                        release_date: c.release_date,
+                        recommendationScore: 50 + (matchCount * 10) + (c.vote_average * 3),
+                        reason: reason
+                    });
+                }
+            });
+
+            // Filter out duplicate or incomplete entries, sort by recommendationScore descending
+            const finalRecommendations = Array.from(allCandidatesMap.values())
+                .filter(m => m.poster_path)
+                .sort((a, b) => b.recommendationScore - a.recommendationScore)
+                .slice(0, 10);
+
+            setRecommendedMovies(finalRecommendations);
+        } catch (err) {
+            console.error("Error generating recommendations:", err);
+        } finally {
+            setRecommendationsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadRecommendations();
+    }, [overallRatedMovies, top8]);
 
     const renderRatingBadge = (item) => {
         const ratingVal = (item.userRating !== undefined && item.userRating !== null) 
@@ -527,17 +754,16 @@ const HomeScreen = () => {
                         <View style={{ alignItems: 'flex-end', justifyContent: 'center', gap: 6 }}>
                             <TouchableOpacity 
                                 onPress={() => navigation.navigate('ProfileSettings')}
-                                style={{ backgroundColor: '#ff8c00', paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: '#ff8c00' }}
+                                style={styles.uniformBtn}
                             >
-                                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>Edit Profile</Text>
+                                <Text style={styles.uniformBtnText}>EDIT PROFILE</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity 
                                 onPress={() => setIsRatingModalVisible(true)}
-                                style={{ backgroundColor: '#111', paddingVertical: 5, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1.5, borderColor: '#ff8c00', flexDirection: 'row', alignItems: 'center' }}
+                                style={styles.uniformBtnOutline}
                             >
-                                <Icon name="star" size={11} color="#ff8c00" style={{ marginRight: 4 }} />
-                                <Text style={{ color: '#ff8c00', fontWeight: 'bold', fontSize: 11 }}>PICK RATING STYLE</Text>
+                                <Text style={styles.uniformBtnOutlineText}>PICK RATING</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -623,10 +849,10 @@ const HomeScreen = () => {
                     <View style={styles.sectionHeaderRow}>
                         <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Top 4 Friends</Text>
                         <TouchableOpacity
-                            style={styles.findFriendsBtn}
+                            style={styles.uniformBtn}
                             onPress={() => setIsFriendModalVisible(true)}
                         >
-                            <Text style={styles.findFriendsBtnText}>FIND FRIENDS</Text>
+                            <Text style={styles.uniformBtnText}>FIND FRIENDS</Text>
                         </TouchableOpacity>
                     </View>
                     {/* Use hydratedTopFriends if available, or fallback to userProfile (stale) momentarily */}
@@ -658,10 +884,10 @@ const HomeScreen = () => {
                     <View style={styles.sectionHeaderRow}>
                         <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>My Top 8</Text>
                         <TouchableOpacity
-                            style={styles.findFriendsBtn}
+                            style={styles.uniformBtn}
                             onPress={() => setIsEditTop8ModalVisible(true)}
                         >
-                            <Text style={styles.findFriendsBtnText}>EDIT TOP 8</Text>
+                            <Text style={styles.uniformBtnText}>EDIT TOP 8</Text>
                         </TouchableOpacity>
                     </View>
                     {top8.length > 0 ? (
@@ -715,6 +941,43 @@ const HomeScreen = () => {
                 </View>
 
                 <View style={styles.separator} />
+
+                {/* --- RECOMMENDED FOR YOU --- */}
+                {recommendedMovies.length > 0 && (
+                    <>
+                        <View style={styles.sectionContainer}>
+                            <Text style={styles.sectionTitle}>Recommended For You 🍿</Text>
+                            <FlatList
+                                horizontal
+                                data={recommendedMovies}
+                                renderItem={({ item }) => {
+                                    const imageUrl = item.poster_path
+                                        ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+                                        : 'https://via.placeholder.com/150';
+
+                                    return (
+                                        <TouchableOpacity
+                                            style={styles.posterItem}
+                                            onPress={() => navigation.navigate('MovieDetails', { movieId: item.id, movie: item })}
+                                        >
+                                            <Image source={{ uri: imageUrl }} style={styles.posterImage} />
+                                            {item.reason && (
+                                                <View style={styles.recommendationBadge}>
+                                                    <Text style={styles.recommendationBadgeText} numberOfLines={1}>
+                                                        {item.reason}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                }}
+                                keyExtractor={(item) => `recommend-${item.id}`}
+                                showsHorizontalScrollIndicator={false}
+                            />
+                        </View>
+                        <View style={styles.separator} />
+                    </>
+                )}
 
                 {/* --- DISCOVERY / EXPLORE --- */}
                 <View style={styles.sectionContainer}>
@@ -824,7 +1087,14 @@ const HomeScreen = () => {
                         <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', flex: 1 }}>Edit My Top 8 Favorites ({top8.length}/8)</Text>
                     </View>
 
-                    <ScrollView contentContainerStyle={{ padding: 20 }}>
+                    <ScrollView
+                        contentContainerStyle={{ padding: 20 }}
+                        scrollEnabled={draggingIndex === null}
+                        onScroll={(e) => {
+                            scrollYRef.current = e.nativeEvent.contentOffset.y;
+                        }}
+                        scrollEventThrottle={16}
+                    >
                         <Text style={{ color: '#ff8c00', fontSize: 13, fontWeight: 'bold', marginBottom: 8, letterSpacing: 0.5 }}>SEARCH & ADD MOVIES</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 8, paddingHorizontal: 12, marginBottom: 15, borderWidth: 1, borderColor: '#333' }}>
                             <Icon name="search" size={16} color="#888" style={{ marginRight: 10 }} />
@@ -1339,21 +1609,41 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 15,
     },
-    findFriendsBtn: {
+    uniformBtn: {
         backgroundColor: '#ff8c00',
-        paddingVertical: 6,
-        paddingHorizontal: 14,
-        borderRadius: 20,
+        width: 105,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.2,
         shadowRadius: 1.5,
         elevation: 2,
+        flexDirection: 'row',
     },
-    findFriendsBtnText: {
+    uniformBtnText: {
         color: '#fff',
         fontWeight: 'bold',
-        fontSize: 12,
+        fontSize: 11,
+        letterSpacing: 0.5,
+    },
+    uniformBtnOutline: {
+        backgroundColor: '#111',
+        width: 105,
+        height: 28,
+        borderRadius: 14,
+        borderWidth: 1.2,
+        borderColor: '#ff8c00',
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexDirection: 'row',
+    },
+    uniformBtnOutlineText: {
+        color: '#ff8c00',
+        fontWeight: 'bold',
+        fontSize: 11,
         letterSpacing: 0.5,
     },
     searchModalContainer: {
@@ -1535,6 +1825,23 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: 'bold',
         letterSpacing: 0.5,
+    },
+    recommendationBadge: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        paddingVertical: 4,
+        paddingHorizontal: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    recommendationBadgeText: {
+        color: '#ff8c00',
+        fontSize: 8,
+        fontWeight: 'bold',
+        textAlign: 'center',
     },
 });
 

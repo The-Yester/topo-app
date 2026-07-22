@@ -207,10 +207,12 @@ const styles = StyleSheet.create({
         paddingTop: 10,
     },
     headerTitle: {
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: 'bold',
         color: '#fff',
         fontFamily: 'Trebuchet MS',
+        textTransform: 'uppercase',
+        letterSpacing: 2
     },
     searchBarContainer: {
         paddingHorizontal: 20,
