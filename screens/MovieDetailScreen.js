@@ -33,6 +33,7 @@ import PercentageRating from '../context/PercentageRating';
 import ClassicRating from '../context/ClassicRating';
 import ThumbsRating from '../components/ThumbsRating';
 import { captureRef } from 'react-native-view-shot';
+import { convertRating } from '../context/RatingLogic';
 import * as Sharing from 'expo-sharing';
 import TicketStubCard from '../components/TicketStubCard';
 import { sendPushNotification, getUserPushToken } from '../services/NotificationService';
@@ -349,34 +350,7 @@ const MovieDetailScreen = ({ route }) => {
         return () => sub();
     }, [movieId]);
 
-    // Helper for Rating Conversion
-    const convertRating = (score, fromType, toType) => {
-        // Normalize types to internal keys
-        const normalize = (t) => {
-            if (t === '1-5' || t === 'pizza') return 'pizza';
-            if (t === '1-10' || t === 'classic') return 'classic';
-            if (t === 'Percentage' || t === 'percentage') return 'percentage';
-            if (t === 'Awards' || t === 'awards') return 'awards';
-            return t;
-        };
 
-        const nFrom = normalize(fromType);
-        const nTo = normalize(toType);
-
-        if (!score && score !== 0) return 0;
-        if (nFrom === nTo) return score;
-
-        // 1. Normalize to 0-10 Scale
-        let base10 = score;
-        if (nFrom === 'pizza') base10 = score * 2;
-        else if (nFrom === 'percentage') base10 = score / 10;
-        // 'classic' ('1-10') and 'awards' are already base 10
-
-        // 2. Convert to Target Scale
-        if (nTo === 'pizza') return base10 / 2;
-        if (nTo === 'percentage') return base10 * 10;
-        return base10;
-    };
 
     // Load User's Rating for this Movie from Firestore
     useEffect(() => {

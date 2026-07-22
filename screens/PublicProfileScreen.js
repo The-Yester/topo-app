@@ -10,6 +10,7 @@ import { sendPushNotification, getUserPushToken } from '../services/Notification
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MoviesContext } from '../context/MoviesContext';
 import TicketStubCard from '../components/TicketStubCard';
+import { convertRating } from '../context/RatingLogic';
 
 const PublicProfileScreen = () => {
     const navigation = useNavigation();
@@ -316,10 +317,11 @@ const PublicProfileScreen = () => {
     };
 
     const renderRatingBadge = (item) => {
-        if (!item.userRating && item.userRating !== 0) return null;
+        if (item.userRating === undefined || item.userRating === null) return null;
 
-        const rating = parseFloat(item.userRating);
-        const method = item.ratingMethod; // May need normalization if inconsistent casing
+        const targetMethod = userData?.ratingMethod || '1-10';
+        const rating = convertRating(item.userRating, item.ratingMethod, targetMethod);
+        const method = targetMethod;
 
         let displayValue = "";
         let iconName = "";

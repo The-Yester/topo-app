@@ -8,7 +8,7 @@ import { auth, db } from '../firebaseConfig';
 import { doc, onSnapshot, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion } from 'firebase/firestore';
 import { getMovieDetails } from '../api/MovieService'; // Ensure we have this
 import { TMDB_API_KEY } from '../utils/config';
-import { normalizeScore } from '../context/RatingLogic';
+import { normalizeScore, convertRating } from '../context/RatingLogic';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -265,19 +265,12 @@ const HomeScreen = () => {
     };
 
     const handleSelectRatingStyle = async (styleId) => {
-        setRatingMethod(styleId);
         setIsRatingModalVisible(false);
-        const user = auth.currentUser;
-        if (user) {
-            try {
-                await updateDoc(doc(db, "users", user.uid), {
-                    ratingMethod: styleId,
-                    ratingSystem: styleId
-                });
-                Alert.alert("Rating Style Updated", "Your preferred rating style has been updated!");
-            } catch (e) {
-                console.error("Error updating rating style:", e);
-            }
+        try {
+            await setRatingMethod(styleId);
+            Alert.alert("Rating Style Updated", "Your preferred rating style has been updated!");
+        } catch (e) {
+            console.error("Error updating rating style:", e);
         }
     };
 
@@ -593,8 +586,8 @@ const HomeScreen = () => {
 
         if (ratingVal === null || ratingVal === undefined) return null;
 
-        const rating = parseFloat(ratingVal);
-        const method = item.ratingMethod || ratingMethod || userProfile?.ratingMethod || userProfile?.ratingSystem || '1-10';
+        const rating = convertRating(ratingVal, item.ratingMethod, ratingMethod);
+        const method = ratingMethod;
 
         let displayValue = "";
         let iconName = "";

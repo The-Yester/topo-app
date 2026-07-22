@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useMemo } from 'react';
+import { convertRating } from './RatingLogic';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, runTransaction, collection, getDocs, increment, query, where } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
@@ -367,9 +368,103 @@ export const MoviesProvider = ({ children }) => {
         }
     };
 
+    const recalculateMovieStats = async (movieId) => {
+        try {
+            const ratingsCollection = collection(db, "movies", movieId.toString(), "user_ratings");
+            const snapshot = await getDocs(ratingsCollection);
+
+            const newStats = {
+                classic: { count: 0, sum: 0, average: 0 },
+                pizza: { count: 0, sum: 0, average: 0 },
+                percentage: { count: 0, sum: 0, average: 0 },
+                awards: { count: 0, sum: 0, average: 0 },
+                thumbs: { count: 0, sum: 0, average: 0 }
+            };
+
+            snapshot.forEach(docSnap => {
+                const r = docSnap.data();
+                let t = r.type;
+                if (t === 'Thumbs') t = 'thumbs';
+
+                if (t && newStats[t]) {
+                    newStats[t].count += 1;
+                    newStats[t].sum += r.score;
+                }
+            });
+
+            Object.keys(newStats).forEach(key => {
+                if (newStats[key].count > 0) {
+                    newStats[key].average = newStats[key].sum / newStats[key].count;
+                }
+            });
+
+            const movieRef = doc(db, "movies", movieId.toString());
+            await setDoc(movieRef, {
+                stats: newStats
+            }, { merge: true });
+        } catch (error) {
+            console.error(`Error recalculating stats for movie ${movieId}:`, error);
+        }
+    };
+
+    const migrateUserRatings = async (newStyle) => {
+        if (!user) return;
+
+        try {
+            let newDbType = newStyle;
+            if (newStyle === '1-10') newDbType = 'classic';
+            else if (newStyle === '1-5') newDbType = 'pizza';
+            else if (newStyle === 'Percentage') newDbType = 'percentage';
+            else if (newStyle === 'Awards') newDbType = 'awards';
+            else if (newStyle === 'Thumbs') newDbType = 'thumbs';
+
+            const ratingsRef = collection(db, "users", user.uid, "ratings");
+            const snapshot = await getDocs(ratingsRef);
+
+            if (snapshot.empty) return;
+
+            for (const ratingDoc of snapshot.docs) {
+                const movieId = ratingDoc.id;
+                const ratingData = ratingDoc.data();
+                
+                const oldScore = ratingData.score;
+                const oldType = ratingData.type || ratingData.originalType || '1-10';
+
+                // Convert score to new style
+                const newScore = convertRating(oldScore, oldType, newStyle);
+
+                // Update private rating document
+                const privateDocRef = doc(db, "users", user.uid, "ratings", movieId);
+                await setDoc(privateDocRef, {
+                    score: newScore,
+                    type: newDbType,
+                    originalType: newStyle
+                }, { merge: true });
+
+                // Update public rating document
+                const publicDocRef = doc(db, "movies", movieId, "user_ratings", user.uid);
+                await setDoc(publicDocRef, {
+                    score: newScore,
+                    type: newDbType
+                }, { merge: true });
+
+                // Recalculate stats for the movie
+                await recalculateMovieStats(movieId);
+            }
+
+            // Reload user data to update current state in the app
+            await loadUserData(user.uid);
+
+        } catch (error) {
+            console.error("Error migrating user ratings:", error);
+        }
+    };
+
     const updateRatingMethod = async (method) => {
         setRatingMethod(method);
         await saveData('ratingMethod', method);
+        await saveData('ratingSystem', method);
+        await migrateUserRatings(method);
     };
 
     const mintTicketStub = async (movie) => {

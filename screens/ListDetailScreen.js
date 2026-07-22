@@ -7,6 +7,7 @@ import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { MoviesContext } from '../context/MoviesContext'; // Adjust path as needed
 import { useNavigation, useFocusEffect } from '@react-navigation/native'; // Import useNavigation & useFocusEffect
 import { auth, db } from '../firebaseConfig';
+import { convertRating } from '../context/RatingLogic';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 // Define the name of your special, non-deletable list
@@ -200,8 +201,16 @@ const ListDetailScreen = ({ route }) => {
       : 'https://placehold.co/80x120/333/fff?text=No+Image';
 
     const rank = index + 1;
-    const yourRating = item.userOverallRating;
     const usersRating = item.vote_average;
+    
+    const rawRating = item.userOverallRating;
+    const hasRating = rawRating !== undefined && rawRating !== null;
+    const convertedRating = hasRating ? convertRating(rawRating, item.ratingMethod, ratingMethod) : null;
+    const displayRating = hasRating
+      ? (ratingMethod === 'Percentage'
+          ? `${convertedRating.toFixed(0)}%`
+          : `${convertedRating.toFixed(1)}`)
+      : 'N/A';
 
     return (
       <Swipeable renderRightActions={() => renderRightActions(item)}>
@@ -223,7 +232,7 @@ const ListDetailScreen = ({ route }) => {
             <View style={[styles.ratingBox, styles.yourRatingBox]}>
               <Text style={styles.ratingBoxLabel}>Your Rating</Text>
               <Text style={styles.ratingBoxValue}>
-                {yourRating !== undefined && yourRating !== null ? parseFloat(yourRating).toFixed(1) : 'N/A'}
+                {displayRating}
               </Text>
             </View>
 
@@ -243,7 +252,12 @@ const ListDetailScreen = ({ route }) => {
       : 'https://placehold.co/100x150/333/fff?text=No+Image';
 
     const rank = index + 1;
-    const yourRating = item.userOverallRating;
+    const rawRating = item.userOverallRating;
+    const hasRating = rawRating !== undefined && rawRating !== null;
+    const convertedRating = hasRating ? convertRating(rawRating, item.ratingMethod, ratingMethod) : null;
+    const displayRating = hasRating
+      ? (ratingMethod === 'Percentage' ? convertedRating.toFixed(0) : convertedRating.toFixed(1))
+      : '';
 
     return (
       <TouchableOpacity
@@ -253,14 +267,14 @@ const ListDetailScreen = ({ route }) => {
         <Image source={{ uri: posterUrl }} style={styles.gridPosterImage} />
         <View style={styles.gridItemFooter}>
           <Text style={styles.gridFooterRankText}>{rank}</Text>
-          {yourRating !== undefined && yourRating !== null && (
+          {hasRating && (
             <View style={styles.gridRatingBadge}>
               {(!ratingMethod || ratingMethod === '1-5') && <MaterialIcon name="pizza" size={14} color="#000" style={{ marginRight: 3 }} />}
               {(ratingMethod === '1-10' || ratingMethod === 'Classic') && <Icon name="star" size={12} color="#000" style={{ marginRight: 3 }} />}
               {ratingMethod === 'Percentage' && <Icon name="percent" size={12} color="#000" style={{ marginRight: 2 }} />}
               {ratingMethod === 'Awards' && <Icon name="trophy" size={14} color="#000" style={{ marginRight: 3 }} />}
               {ratingMethod === 'Thumbs' && <MaterialIcon name="thumb-up" size={12} color="#000" style={{ marginRight: 3 }} />}
-              <Text style={styles.gridRatingText}>{parseFloat(yourRating).toFixed(1)}</Text>
+              <Text style={styles.gridRatingText}>{displayRating}</Text>
             </View>
           )}
         </View>
