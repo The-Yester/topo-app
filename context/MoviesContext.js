@@ -696,12 +696,28 @@ export const MoviesProvider = ({ children }) => {
                 timestamp: new Date()
             }, { merge: true });
 
+            // Fetch current user details to cache on the public rating (avoids user queries on StyleRatingsScreen)
+            let currentUsername = 'Unknown';
+            let currentProfilePhoto = null;
+            try {
+                const userDocSnap = await getDoc(doc(db, "users", user.uid));
+                if (userDocSnap.exists()) {
+                    const userData = userDocSnap.data();
+                    currentUsername = userData.username || 'Unknown';
+                    currentProfilePhoto = userData.profilePhoto || null;
+                }
+            } catch (e) {
+                console.error("Error fetching user details in submitRating:", e);
+            }
+
             // 3. Save to Public Movie Subcollection (for Aggregation)
             const publicRatingRef = doc(db, "movies", movieId.toString(), "user_ratings", user.uid);
             await setDoc(publicRatingRef, {
                 type: dbType, // Save normalized type
                 score: validScore,
                 userId: user.uid,
+                username: currentUsername,
+                profilePhoto: currentProfilePhoto,
                 timestamp: new Date()
             });
 

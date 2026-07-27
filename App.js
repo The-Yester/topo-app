@@ -35,6 +35,7 @@ import UserAwardsScreen from './screens/UserAwardsScreen';
 import RatingInstructionsScreen from './screens/RatingInstructionsScreen';
 import ActorDetailScreen from './screens/ActorDetailScreen';
 import TheaterTripScreen from './screens/TheaterTripScreen';
+import StyleRatingsScreen from './screens/StyleRatingsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -153,6 +154,7 @@ function AppNavigator() {
                     <Stack.Screen name="ActorDetail" component={ActorDetailScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="TheaterTrip" component={TheaterTripScreen} options={{ headerShown: false }} />
                     <Stack.Screen name="TicketWallet" component={TicketWalletScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name="StyleRatings" component={StyleRatingsScreen} options={{ headerShown: false }} />
                 </Stack.Navigator>
             </NavigationContainer>
         </MoviesProvider>

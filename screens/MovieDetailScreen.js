@@ -47,12 +47,16 @@ const MovieDetailScreen = ({ route }) => {
     const navigation = useNavigation();
     const { ratingMethod, addMovieToList, addToRecentlyWatched, addToRecentActivity, submitRating, movieLists, overallRatedMovies, mintTicketStub } = useContext(MoviesContext);
     const [userRating, setUserRating] = useState(0);
+    const [collectiveAverage, setCollectiveAverage] = useState(null);
+    const [totalRatingsCount, setTotalRatingsCount] = useState(0);
+    const [activePage, setActivePage] = useState(0);
+    const [scrollWidth, setScrollWidth] = useState(180);
     const { movieId, movie: initialMovie } = route.params;
     const [movie, setMovie] = useState(initialMovie || null);
     const [ratingModalVisible, setRatingModalVisible] = useState(false);
     const [reviewModalVisible, setReviewModalVisible] = useState(false);
     const [listModalVisible, setListModalVisible] = useState(false);
-    const [isWatched, setIsWatched] = useState(false); 
+    const [isWatched, setIsWatched] = useState(false);
     const [listsSortOrder, setListsSortOrder] = useState('asc'); // Default to A-Z / numeric asc
 
     // Load persisted list sort order when list modal is shown
@@ -145,7 +149,7 @@ const MovieDetailScreen = ({ route }) => {
                 const friendMap = new Map();
                 (data.following || []).forEach(f => friendMap.set(f.uid, f));
                 (data.topFriends || []).forEach(f => friendMap.set(f.uid, f)); // Merge deduplicated
-                
+
                 const friendList = Array.from(friendMap.values());
                 const fetchPromises = friendList.map(async (friend) => {
                     try {
@@ -160,7 +164,7 @@ const MovieDetailScreen = ({ route }) => {
                     } catch (e) { console.error(e); }
                     return friend; // fallback to cached data if read fails
                 });
-                
+
                 const liveFriends = await Promise.all(fetchPromises);
                 setTripFriends(liveFriends);
             }
@@ -205,14 +209,14 @@ const MovieDetailScreen = ({ route }) => {
             // Trigger Push Notifications
             const title = "🍿 Theater Trip Alert!";
             const body = `${username} wants to see ${movie?.title || 'a movie'} in theaters. Are you in?`;
-            
+
             for (const friendUid of selectedFriendIds) {
                 const token = await getUserPushToken(friendUid);
                 if (token) {
                     await sendPushNotification(token, title, body, { screen: 'TheaterTrip', tripId });
                 }
             }
-            
+
             setTripModalVisible(false);
             setSelectedFriendIds([]);
             showToast("Theater Trip invites sent! 🍿");
@@ -418,12 +422,86 @@ const MovieDetailScreen = ({ route }) => {
         calculateMaxRatingSystem();
     }, [ratingMethod, userRating]);
 
+    // Real-time listener to calculate the unified Collective Average of all user ratings converted to viewer's style
+    useEffect(() => {
+        if (!movieId) return;
+        const ratingsRef = collection(db, "movies", movieId.toString(), "user_ratings");
+        const unsub = onSnapshot(ratingsRef, (snapshot) => {
+            let totalConvertedScore = 0;
+            let count = 0;
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                if (data.score !== undefined && data.type) {
+                    const converted = convertRating(data.score, data.type, ratingMethod);
+                    totalConvertedScore += converted;
+                    count++;
+                }
+            });
+            if (count > 0) {
+                setCollectiveAverage(totalConvertedScore / count);
+                setTotalRatingsCount(count);
+            } else {
+                setCollectiveAverage(null);
+                setTotalRatingsCount(0);
+            }
+        });
+        return () => unsub();
+    }, [movieId, ratingMethod]);
+
+    const formatCollectiveAverage = (avg) => {
+        const formattedScore = parseFloat(avg).toFixed(ratingMethod === 'Percentage' ? 0 : 1);
+        if (ratingMethod === 'Percentage') {
+            return `${formattedScore}%`;
+        }
+        return `${formattedScore}/${maxRating}`;
+    };
+
+    const renderCollectiveRatingIcon = () => {
+        const iconSize = 28;
+        switch (ratingMethod) {
+            case '1-5':
+            case 'Pizza':
+                return <MaterialIcon name="pizza" size={iconSize} color="#FF5722" style={{ marginTop: 5 }} />;
+            case '1-10':
+            case 'Classic':
+                return (
+                    <View style={{ width: iconSize, height: iconSize, borderRadius: iconSize / 2, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center', marginTop: 5 }}>
+                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#000' }}>10</Text>
+                    </View>
+                );
+            case 'Percentage':
+                return <Icon name="percent" size={iconSize - 4} color="#4CAF50" style={{ marginTop: 5 }} />;
+            case 'Awards':
+                return <Icon name="trophy" size={iconSize} color="#FFD700" style={{ marginTop: 5 }} />;
+            case 'Thumbs':
+                return <MaterialIcon name="thumb-up" size={iconSize} color="#4CAF50" style={{ marginTop: 5 }} />;
+            default:
+                return null;
+        }
+    };
+
+    const onScrollViewLayout = (event) => {
+        const { width } = event.nativeEvent.layout;
+        if (width > 0) {
+            setScrollWidth(width);
+        }
+    };
+
+    const handleScroll = (event) => {
+        const contentOffsetX = event.nativeEvent.contentOffset.x;
+        const width = event.nativeEvent.layoutMeasurement.width;
+        if (width > 0) {
+            const page = Math.round(contentOffsetX / width);
+            setActivePage(page);
+        }
+    };
+
     // Load Reviews (Live from Firestore)
     useEffect(() => {
         if (!movieId) return;
         const reviewsRef = collection(db, "movies", String(movieId), "reviews");
         const q = query(reviewsRef, orderBy("createdAt", "asc"));
-        
+
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedReviews = [];
             snapshot.forEach((docSnap) => {
@@ -476,7 +554,7 @@ const MovieDetailScreen = ({ route }) => {
                 profilePhoto: currentUser?.profilePhoto || null,
                 createdAt: serverTimestamp()
             });
-            
+
             // setReviews is automatically handled by the onSnapshot listener!
             setReviewModalVisible(false);
             setReviewText('');
@@ -679,46 +757,135 @@ const MovieDetailScreen = ({ route }) => {
                     <View style={styles.usersRatingsColumn}>
                         <Text style={styles.ratingHeader}>TOPO Users</Text>
 
-                        {/* Classic (Badge 10) */}
-                        <View style={styles.ratingDetailRow}>
-                            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#000' }}>10</Text>
+                        <ScrollView
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            onMomentumScrollEnd={handleScroll}
+                            onLayout={onScrollViewLayout}
+                            style={styles.topoUsersScrollView}
+                            contentContainerStyle={styles.topoUsersScrollContent}
+                            nestedScrollEnabled={true}
+                            decelerationRate="fast"
+                        >
+                            {/* Page 0: Direct Averages List */}
+                            <View style={[styles.scrollPage, { width: scrollWidth, alignItems: 'stretch' }]}>
+                                {/* Classic (Badge 10) */}
+                                <TouchableOpacity
+                                    style={styles.ratingDetailRow}
+                                    onPress={() => navigation.navigate('StyleRatings', {
+                                        movieId: movie.id,
+                                        movieTitle: movie.title,
+                                        posterPath: movie.poster_path,
+                                        ratingStyle: 'classic',
+                                        averageScore: globalStats?.classic?.count > 0 ? `${globalStats.classic.average.toFixed(1)}/10` : 'N/A',
+                                        ratingCount: globalStats?.classic?.count || 0
+                                    })}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFC107', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#000' }}>10</Text>
+                                    </View>
+                                    <Text style={styles.ratingDetailText}>
+                                        {globalStats?.classic?.count > 0 ? `${globalStats.classic.average.toFixed(1)}/10` : 'N/A'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {/* Pizza (Vector Icon) */}
+                                <TouchableOpacity
+                                    style={styles.ratingDetailRow}
+                                    onPress={() => navigation.navigate('StyleRatings', {
+                                        movieId: movie.id,
+                                        movieTitle: movie.title,
+                                        posterPath: movie.poster_path,
+                                        ratingStyle: 'pizza',
+                                        averageScore: globalStats?.pizza?.count > 0 ? `${globalStats.pizza.average.toFixed(1)}/5` : 'N/A',
+                                        ratingCount: globalStats?.pizza?.count || 0
+                                    })}
+                                    activeOpacity={0.7}
+                                >
+                                    <MaterialIcon name="pizza" size={18} color="#FF5722" style={styles.usersRatingIcon} />
+                                    <Text style={styles.ratingDetailText}>
+                                        {globalStats?.pizza?.count > 0 ? `${globalStats.pizza.average.toFixed(1)}/5` : 'N/A'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {/* Percentage */}
+                                <TouchableOpacity
+                                    style={styles.ratingDetailRow}
+                                    onPress={() => navigation.navigate('StyleRatings', {
+                                        movieId: movie.id,
+                                        movieTitle: movie.title,
+                                        posterPath: movie.poster_path,
+                                        ratingStyle: 'percentage',
+                                        averageScore: globalStats?.percentage?.count > 0 ? `${globalStats.percentage.average.toFixed(0)}%` : 'N/A',
+                                        ratingCount: globalStats?.percentage?.count || 0
+                                    })}
+                                    activeOpacity={0.7}
+                                >
+                                    <Icon name="percent" size={14} color="#4CAF50" style={styles.usersRatingIcon} />
+                                    <Text style={styles.ratingDetailText}>
+                                        {globalStats?.percentage?.count > 0 ? `${globalStats.percentage.average.toFixed(0)}%` : 'N/A'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {/* Awards */}
+                                <TouchableOpacity
+                                    style={styles.ratingDetailRow}
+                                    onPress={() => navigation.navigate('StyleRatings', {
+                                        movieId: movie.id,
+                                        movieTitle: movie.title,
+                                        posterPath: movie.poster_path,
+                                        ratingStyle: 'awards',
+                                        averageScore: globalStats?.awards?.count > 0 ? `${globalStats.awards.average.toFixed(1)}/10` : 'N/A',
+                                        ratingCount: globalStats?.awards?.count || 0
+                                    })}
+                                    activeOpacity={0.7}
+                                >
+                                    <Icon name="trophy" size={16} color="#FFD700" style={styles.usersRatingIcon} />
+                                    <Text style={styles.ratingDetailText}>
+                                        {globalStats?.awards?.count > 0 ? `${globalStats.awards.average.toFixed(1)}/10` : 'N/A'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {/* Thumbs - Thumbs Up Variation */}
+                                <TouchableOpacity
+                                    style={styles.ratingDetailRow}
+                                    onPress={() => navigation.navigate('StyleRatings', {
+                                        movieId: movie.id,
+                                        movieTitle: movie.title,
+                                        posterPath: movie.poster_path,
+                                        ratingStyle: 'thumbs',
+                                        averageScore: globalStats?.thumbs?.count > 0 ? `${globalStats.thumbs.average.toFixed(1)}/4` : 'N/A',
+                                        ratingCount: globalStats?.thumbs?.count || 0
+                                    })}
+                                    activeOpacity={0.7}
+                                >
+                                    <MaterialIcon name="thumb-up" size={16} color="#4CAF50" style={styles.usersRatingIcon} />
+                                    <Text style={styles.ratingDetailText}>
+                                        {globalStats?.thumbs?.count > 0 ? `${globalStats.thumbs.average.toFixed(1)}/4` : 'N/A'}
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
-                            <Text style={styles.ratingDetailText}>
-                                {globalStats?.classic?.count > 0 ? `${globalStats.classic.average.toFixed(1)}/10` : 'N/A'}
-                            </Text>
-                        </View>
 
-                        {/* Pizza (Vector Icon) */}
-                        <View style={styles.ratingDetailRow}>
-                            <MaterialIcon name="pizza" size={18} color="#FF5722" style={styles.usersRatingIcon} />
-                            <Text style={styles.ratingDetailText}>
-                                {globalStats?.pizza?.count > 0 ? `${globalStats.pizza.average.toFixed(1)}/5` : 'N/A'}
-                            </Text>
-                        </View>
+                            {/* Page 1: Collective Average */}
+                            <View style={[styles.scrollPage, { width: scrollWidth }]}>
+                                <View style={styles.collectiveCard}>
+                                    <Text style={styles.collectiveScoreText}>
+                                        {collectiveAverage !== null ? formatCollectiveAverage(collectiveAverage) : 'N/A'}
+                                    </Text>
+                                    {renderCollectiveRatingIcon()}
+                                    <Text style={styles.collectiveFootnote}>
+                                        (The overall community rating, normalized across all users.)
+                                    </Text>
+                                </View>
+                            </View>
+                        </ScrollView>
 
-                        {/* Percentage */}
-                        <View style={styles.ratingDetailRow}>
-                            <Icon name="percent" size={14} color="#4CAF50" style={styles.usersRatingIcon} />
-                            <Text style={styles.ratingDetailText}>
-                                {globalStats?.percentage?.count > 0 ? `${globalStats.percentage.average.toFixed(0)}%` : 'N/A'}
-                            </Text>
-                        </View>
-
-                        {/* Awards */}
-                        <View style={styles.ratingDetailRow}>
-                            <Icon name="trophy" size={16} color="#FFD700" style={styles.usersRatingIcon} />
-                            <Text style={styles.ratingDetailText}>
-                                {globalStats?.awards?.count > 0 ? `${globalStats.awards.average.toFixed(1)}/10` : 'N/A'}
-                            </Text>
-                        </View>
-
-                        {/* Thumbs - Thumbs Up Variation */}
-                        <View style={styles.ratingDetailRow}>
-                            <MaterialIcon name="thumb-up" size={16} color="#4CAF50" style={styles.usersRatingIcon} />
-                            <Text style={styles.ratingDetailText}>
-                                {globalStats?.thumbs?.count > 0 ? `${globalStats.thumbs.average.toFixed(1)}/4` : 'N/A'}
-                            </Text>
+                        {/* Page dots indicator */}
+                        <View style={styles.dotsContainer}>
+                            <View style={[styles.dot, activePage === 0 ? styles.activeDot : styles.inactiveDot]} />
+                            <View style={[styles.dot, activePage === 1 ? styles.activeDot : styles.inactiveDot]} />
                         </View>
                     </View>
                 </View>
@@ -727,8 +894,8 @@ const MovieDetailScreen = ({ route }) => {
                     {/* Theatrical Check-In & Plan Trip Buttons (Dynamic) */}
                     {isTheaterEligible() && (
                         <>
-                            <TouchableOpacity 
-                                style={[styles.gridButton, { backgroundColor: '#1E90FF', width: '100%', marginBottom: 10 }]} 
+                            <TouchableOpacity
+                                style={[styles.gridButton, { backgroundColor: '#1E90FF', width: '100%', marginBottom: 10 }]}
                                 onPress={handleMintTicket}
                                 disabled={isMinting}
                             >
@@ -736,8 +903,8 @@ const MovieDetailScreen = ({ route }) => {
                                 <Text style={styles.gridButtonText}>{isMinting ? "Verifying GPS..." : "I'm at the Theater"}</Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
-                                style={[styles.gridButton, { backgroundColor: '#FFD700', width: '100%', marginBottom: 10 }]} 
+                            <TouchableOpacity
+                                style={[styles.gridButton, { backgroundColor: '#FFD700', width: '100%', marginBottom: 10 }]}
                                 onPress={openTripModal}
                             >
                                 <Icon name="users" size={16} color="#000" style={{ marginRight: 8 }} />
@@ -745,7 +912,7 @@ const MovieDetailScreen = ({ route }) => {
                             </TouchableOpacity>
                         </>
                     )}
-                    
+
                     {/* Row 1 */}
                     <TouchableOpacity style={[styles.gridButton, { backgroundColor: '#e50914' }]} onPress={() => setRatingModalVisible(true)}>
                         <Icon name="star" size={16} color="white" style={{ marginRight: 8 }} />
@@ -872,16 +1039,16 @@ const MovieDetailScreen = ({ route }) => {
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>How to Rate & Log 🍿</Text>
-                        
+
                         <View style={{ marginVertical: 10, paddingHorizontal: 5 }}>
                             <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>1. Quick Rate ⭐️</Text>
                             <Text style={{ color: '#ccc', fontSize: 14, marginBottom: 15 }}>
-                                If you just want to Rate a movie, select your score and tap <Text style={{fontWeight: 'bold', color: '#ff8c00'}}>Submit</Text>. It will automatically be added to your Recently Rated list.
+                                If you just want to Rate a movie, select your score and tap <Text style={{ fontWeight: 'bold', color: '#ff8c00' }}>Submit</Text>. It will automatically be added to your Recently Rated list.
                             </Text>
 
                             <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>2. Log as Watched 🎬</Text>
                             <Text style={{ color: '#ccc', fontSize: 14 }}>
-                                If you recently watched the movie, tap the <Text style={{fontWeight: 'bold', color: '#00FFFF'}}>Press to add to Recently Watched</Text> button first (do not hit Cancel), and THEN tap <Text style={{fontWeight: 'bold', color: '#ff8c00'}}>Submit</Text>.
+                                If you recently watched the movie, tap the <Text style={{ fontWeight: 'bold', color: '#00FFFF' }}>Press to add to Recently Watched</Text> button first (do not hit Cancel), and THEN tap <Text style={{ fontWeight: 'bold', color: '#ff8c00' }}>Submit</Text>.
                                 {"\n\n"}This separates your movies on your home screen, showing what you've just rated vs what you just watched and rated!
                             </Text>
                         </View>
@@ -1166,10 +1333,10 @@ const MovieDetailScreen = ({ route }) => {
                         <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>
                             You secured a {mintedStub?.rarityTier} stub at {mintedStub?.theaterName} (+{mintedStub?.pointsEarned || 10} PTS).
                         </Text>
-                        
+
                         {mintedStub && <TicketStubCard stubData={mintedStub} />}
 
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={[styles.modalButton, { backgroundColor: '#ff8c00', marginTop: 30, width: '80%', borderRadius: 25, paddingVertical: 15, elevation: 5, alignItems: 'center', justifyContent: 'center' }]}
                             onPress={() => setMintedStub(null)}
                         >
@@ -1192,21 +1359,21 @@ const MovieDetailScreen = ({ route }) => {
                         <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 15, textAlign: 'center' }}>
                             Select friends to push a Theater Notification to.
                         </Text>
-                        
+
                         <ScrollView style={{ width: '100%', marginBottom: 20 }}>
                             {tripFriends.map(friend => {
                                 const isSelected = selectedFriendIds.includes(friend.uid);
                                 return (
-                                    <TouchableOpacity 
-                                        key={friend.uid} 
+                                    <TouchableOpacity
+                                        key={friend.uid}
                                         style={{
-                                            flexDirection: 'row', alignItems: 'center', padding: 12, 
-                                            borderRadius: 8, backgroundColor: isSelected ? 'rgba(255,215,0,0.2)' : '#333', 
+                                            flexDirection: 'row', alignItems: 'center', padding: 12,
+                                            borderRadius: 8, backgroundColor: isSelected ? 'rgba(255,215,0,0.2)' : '#333',
                                             marginBottom: 10, borderWidth: 1, borderColor: isSelected ? '#FFD700' : 'transparent'
                                         }}
                                         onPress={() => toggleFriendSelection(friend.uid)}
                                     >
-                                        <Image 
+                                        <Image
                                             source={friend.profilePhoto && friend.profilePhoto !== "null" && friend.profilePhoto !== "" ? { uri: friend.profilePhoto } : require('../assets/profile_placeholder.jpg')}
                                             style={{ width: 40, height: 40, borderRadius: 20, marginRight: 15 }}
                                         />
@@ -1221,13 +1388,13 @@ const MovieDetailScreen = ({ route }) => {
                         </ScrollView>
 
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.modalSecondaryButton, { flex: 1, marginRight: 10, backgroundColor: '#555' }]}
                                 onPress={() => setTripModalVisible(false)}
                             >
                                 <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.modalPrimaryButton, { flex: 1, marginLeft: 10, backgroundColor: '#FFD700' }]}
                                 onPress={handleSendTripInvites}
                             >
@@ -1808,6 +1975,66 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         flexWrap: 'wrap',
         flex: 1
+    },
+    topoUsersScrollView: {
+        width: '100%',
+        height: 165,
+        marginTop: 5,
+    },
+    topoUsersScrollContent: {
+        alignItems: 'stretch',
+    },
+    scrollPage: {
+        alignSelf: 'stretch',
+        justifyContent: 'center',
+        paddingHorizontal: 5,
+    },
+    collectiveCard: {
+        backgroundColor: '#ffffff',
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 18,
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    collectiveScoreText: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: '#111111',
+        fontFamily: 'Trebuchet MS',
+    },
+    collectiveFootnote: {
+        fontSize: 9,
+        color: '#666666',
+        textAlign: 'center',
+        marginTop: 10,
+        lineHeight: 12,
+        fontFamily: 'Trebuchet MS',
+    },
+    dotsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 6,
+        paddingVertical: 4,
+    },
+    dot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        marginHorizontal: 4,
+    },
+    activeDot: {
+        backgroundColor: '#ff8c00',
+    },
+    inactiveDot: {
+        backgroundColor: '#555555',
     }
 });
 
